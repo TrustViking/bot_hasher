@@ -1,12 +1,9 @@
-bot_snipper.code-workspace
+bot_hasher.code-workspace
 F16.session
-bot.session
 #
 # при запуске бота папка для логов, создастся автоматически
 /log_file 
-# папка для скачанных исходных видеофайлов из которых будут браться фрагменты
-/video_source 
 # папка для фрагментов 
-/video_frag 
+/diff_video 
 # папка для хранения файлов БД, создается автоматически
 /db_storage

@@ -16,7 +16,7 @@ Bot, Dispatcher
 # может потребоваться настроить более надежное и постоянное хранилище, 
 # такое как RedisStorage или MongoDBStorage.
 storage_mem = MemoryStorage() 
-token=os.getenv('TELEGRAM_TOKEN')
+token=os.getenv('TELEGRAM_TOKEN_pHASHER')
 bot=Bot(token)
 dp=Dispatcher(bot, storage=storage_mem)
 

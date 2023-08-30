@@ -23,7 +23,6 @@ class Make_db(AsyncAttrs, DeclarativeBase):
                  log_file='mkdb_log.txt', 
                  log_level=logging.DEBUG,
                  db_file='db_file.db',
-                 #max_download=3,
                  ):
         Make_db.countInstance += 1
         self.countInstance = Make_db.countInstance
@@ -41,15 +40,11 @@ class Make_db(AsyncAttrs, DeclarativeBase):
         self.log_path = os.path.join(self.Logger.log_path, 'sqlalchemy')
         self.rows=None
         # создаем url БД
-        # self.db_url = f'sqlite+pysqlite:///{self.db_file}'
         self.db_url = f'sqlite+aiosqlite:///{self.db_file}'
         # создаем объект engine для связи с БД
-        # self.engine = create_engine(self.db_url, logging_name=self.log_path)
         self.engine = create_async_engine(self.db_url, logging_name=self.log_path)
         # Создаем асинхронный объект Session 
-        #self.Session=sessionmaker(bind=self.engine)
         self.Session = async_sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
-        #self.Db = BaseDB(logger=self.Logger)
         self._print()
         #     
     # выводим № объекта
@@ -66,30 +61,9 @@ class Make_db(AsyncAttrs, DeclarativeBase):
         if not os.path.exists(db_dir):
             os.makedirs(db_dir)
 
-    # # Создание таблицы в базе данных
-    # async def create_table(self):
-    #     async with self.Session() as session:
-    #         async with session.begin():
-    #             try:
-    #                 # Создаем все таблицы в базе данных
-    #                 await session.run_sync(self.metadata.create_all)
-    #                 for name_table in list(self.table.keys()):
-    #                     # проверяем структуру таблицы в БД
-    #                     if not isinstance(self.table.get(name_table), Table()):
-    #                         if name_table is not list(self.table.keys()):
-    #                             print(f'[Make_db] [create_table] name_table [{name_table}] is not in dictionary Table')
-    #                         else: 
-    #                             print(f'[Make_db] [create_table] Object in self.table[{name_table}] is not Table. \nObject type: {type(self.table.get(name_table))}')
-    #                         return None
-    #                     else:
-    #                         print(f'[Make_db] [create_table] table[{name_table}]: {type(self.table.get(name_table))}')
-    #             except SQLAlchemyError as e:
-    #                 print(f'Error occurred during Table creation: {e}')
-
     # Создание таблицы в базе данных
     async def create_table(self):
         async with self.engine.begin() as connect:
-            # async with session.begin():
             try:
                 # Создаем все таблицы в базе данных
                 await connect.run_sync(self.metadata.create_all)

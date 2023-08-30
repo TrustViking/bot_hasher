@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
 #
-import subprocess
-import os
-import sys
-import psutil
-import pynvml
-import asyncio, os, sys, logging
-import subprocess
-# from concurrent.futures import ProcessPoolExecutor
+import subprocess, os, sys, psutil, pynvml, logging, asyncio
 from bot_env.mod_log import Logger
-# from data_base.base_db import BaseDB
 
 class Start:
     """Module for START"""
@@ -64,9 +56,9 @@ async def main():
     # Список скриптов для запуска
     scripts = [
         os.path.join(sys.path[0], 'bot_telega.py'),
-        os.path.join(sys.path[0], 'bot_dnld.py'),
-        os.path.join(sys.path[0], 'bot_mov.py'),
-        os.path.join(sys.path[0], 'bot_sender.py'),
+        # os.path.join(sys.path[0], 'bot_hash.py'),
+        # os.path.join(sys.path[0], 'bot_dnld.py'),
+        # os.path.join(sys.path[0], 'bot_sender.py'),
     ]
     #
     print(f'\nСтарт приложения...') 
