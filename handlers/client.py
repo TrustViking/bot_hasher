@@ -1,6 +1,8 @@
 
 import os, sys
 from pyrogram import Client
+from PIL import Image
+import numpy as np
 import hashlib
 from time import time
 from aiogram import types
@@ -13,6 +15,7 @@ from aiogram.dispatcher import FSMContext
 from bot_env.mod_log import Logger
 from bot_env.create_obj4bot import bot, dp, token
 from data_base.base_db import BaseDB
+from videomaker.comparator import VidCompar
 
 # класс машины состояний
 class Form(StatesGroup):
@@ -39,10 +42,11 @@ class Handlers4bot:
         self.token=token
         self.Logger = logger
         self.Db=BaseDB(logger=self.Logger)
-        # self.Cl=Client()
+        self.Cmp=VidCompar()
         self.diction={}
         self.size_limit = 524288000 # 500Mb
         self.path_save_vid=os.path.join(sys.path[0], 'diff_video')
+        self.path_save_keyframe=os.path.join(sys.path[0], 'diff_video', 'keyframes')
 
         self._new_client()
         self._create_save_directory()
@@ -65,6 +69,9 @@ class Handlers4bot:
         """
         if not os.path.exists(self.path_save_vid):
             os.makedirs(self.path_save_vid)
+        #
+        if not os.path.exists(self.path_save_keyframe):
+            os.makedirs(self.path_save_keyframe)
 
     # обертка для безопасного выполнения методов
     # async def safe_execute(self, coroutine: Callable[..., Coroutine[Any, Any, T]]) -> T:
@@ -76,6 +83,22 @@ class Handlers4bot:
             print(f'\nERROR[Handlers4bot {name_func}] ERROR: {eR}') 
             self.Logger.log_info(f'\nERROR[Handlers4bot {name_func}] ERROR: {eR}') 
             return None
+
+    # async def comparator_files(self, path_first: str, 
+    #                                  path_second: str, threshold: int=None):
+    #     #
+    #     similar_pairs, similar_frame = self.Cmp.is_video_unique(path_first, path_second)
+    #     if not similar_frame:
+    #         print(f'\n[Handlers4bot comparator_files] Похожих ключевых файлов не обнаружено'
+    #               f'Это совсем разные файлы')
+    #         return None
+    #     # сохраняем на диск похожие ключевые кадры
+    #     for index, frame in enumerate(similar_frame):
+    #         image_pil = Image.fromarray(np.uint8(frame), 'RGB')
+    #         full_name_file = os.path.join(self.path_save_keyframe, 'keyframe_'+str(index)+'.png') 
+    #         #image_pil.save('image.jpg')  # сохранение в формате JPEG
+    #         image_pil.save(full_name_file)  # сохранение в формате PNG
+
 
     # обрабатывает команду пользователя - /start
     async def command_start(self, message: types.Message, state: FSMContext): 
@@ -195,6 +218,7 @@ class Handlers4bot:
         
         await bot.send_message(message.chat.id, "\nВторое видео скачано!")  
         # формируем вторую часть строки таблицы task
+        self.diction['time_task']=int(time())
         self.diction['video_id_second']=file_id 
         self.diction['width_second']=str(message.video.width) 
         self.diction['height_second']=str(message.video.height) 
@@ -202,13 +226,17 @@ class Handlers4bot:
         self.diction['mime_type_second']=mime 
         self.diction['file_size_second']=file_size 
         self.diction['path_file_second']=directory 
-        self.diction['time_task']=int(time()) 
+        self.diction['dnld']='dnlded'
+        self.diction['in_work']='not_diff'
         # записываем словарь значений в таблицу task 
         await self.Db.insert_data('diff', self.diction)
         # выводим таблицу task
         await self.Db.print_data('diff')
         # снимаем состояние 
         await state.finish()
+
+        # # начинаем сравнивать видео на уникальность
+        # await self.comparator_files(self.diction['path_file_first'], self.diction['path_file_second'])
 
 
     # регистрация хэндлеров

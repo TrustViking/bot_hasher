@@ -17,7 +17,7 @@ Bot, Dispatcher
 # такое как RedisStorage или MongoDBStorage.
 storage_mem = MemoryStorage() 
 token=os.getenv('TELEGRAM_TOKEN_pHASHER')
-bot=Bot(token)
+bot=Bot(token, timeout=120)
 dp=Dispatcher(bot, storage=storage_mem)
 
 

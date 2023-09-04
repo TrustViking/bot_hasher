@@ -56,10 +56,10 @@ async def main():
     # Список скриптов для запуска
     scripts = [
         os.path.join(sys.path[0], 'bot_telega.py'),
-        # os.path.join(sys.path[0], 'bot_hash.py'),
+        os.path.join(sys.path[0], 'bot_hasher.py'),
         # os.path.join(sys.path[0], 'bot_dnld.py'),
         # os.path.join(sys.path[0], 'bot_sender.py'),
-    ]
+                ]
     #
     print(f'\nСтарт приложения...') 
     print(f'\n==============================================================================\n')

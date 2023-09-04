@@ -10,7 +10,7 @@ table_task = Table(
     Column("id", Integer, primary_key=True),
     Column("date_message", String(50)),
     Column("chat_id", String(100)),
-    Column("username", String(50)),
+    Column("username", String(100)),
     Column("time_task", Integer), # Получаем текущее время постановки задачи
     #
     Column("video_id_first", String(100)),
@@ -28,8 +28,11 @@ table_task = Table(
     Column("mime_type_second", String(100)),
     Column("file_size_second", String(100)),
     Column("path_file_second", String(200)),
+    Column("dnld", String(200)), # dnlded or None
+    Column("in_work", String(100)), # diff or not_diff
+
     #
-    Column("timeend_task", Integer), # Получаем текущее время постановки задачи
+    # Column("timeend_task", Integer), # Получаем текущее время постановки задачи
             ) 
 #
 # Объединение таблиц в словарь, где ключами будут имена таблиц, 

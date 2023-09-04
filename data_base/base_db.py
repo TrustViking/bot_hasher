@@ -62,7 +62,7 @@ class BaseDB:
         self.db_file = os.path.join(sys.path[0], 'db_storage', db_file)
         # формируем путь к лог файлу 'sqlalchemy'
         self.log_path = os.path.join(self.Logger.log_path, 'sqlalchemy')
-        self.rows=None
+        # self.rows=None
         # создаем url БД
         # self.db_url = f'sqlite+pysqlite:///{self.db_file}'
         self.db_url = f'sqlite+aiosqlite:///{self.db_file}'
@@ -186,13 +186,13 @@ class BaseDB:
                 return None
         return list_res
 
-    # Находим в таблице 'task' и 'frag' строки с date_message и user_id
+    # Находим в таблице строки с date_message и user_id
     # записываем словарь значений
-    async def update_table_date(self, name_tables: list, 
+    async def update_table_date_userid(self, 
+                                name_tables: list, 
                                 date_message: str,
                                 user_id: str,
                                 diction: dict):
-        #
         list_res=[]
         for name_table in name_tables:
             table=self.table.get(name_table)
@@ -201,17 +201,47 @@ class BaseDB:
                 async with self.Session() as session:
                     stmt = (update(table).
                             where(table.c.date_message == date_message, 
-                                table.c.user_id == user_id).
+                                  table.c.user_id == user_id).
                             values(diction))               
                     await session.execute(stmt)
                     await session.commit()
                     list_res.append(diction)
             except SQLAlchemyError as eR:
-                print(f'\nERROR [BaseDB: update_table_date] ERROR: {str(eR)}')
-                self.Logger.log_info(f'\nERROR [BaseDB: update_table_date] ERROR: {str(eR)}')
+                print(f'\nERROR [BaseDB: update_table_date_userid] ERROR: {str(eR)}')
+                self.Logger.log_info(f'\nERROR [BaseDB: update_table_date_userid] ERROR: {str(eR)}')
                 await session.rollback()
                 return None
         return list_res
+
+
+    # Находим в таблице строки с date_message и chat_id
+    # записываем словарь значений
+    async def update_table_date_chatid(self, 
+                                       name_tables: list, 
+                                       date_message: str,
+                                       chat_id: str,
+                                       diction: dict):
+        list_res=[]
+        for name_table in name_tables:
+            table=self.table.get(name_table)
+            # Находим все строки с date_message и chat_id 
+            try:
+                async with self.Session() as session:
+                    stmt = (update(table).
+                            where(table.c.date_message == date_message, 
+                                  table.c.chat_id == chat_id).
+                            values(diction))               
+                    await session.execute(stmt)
+                    await session.commit()
+                    list_res.append(diction)
+            except SQLAlchemyError as eR:
+                print(f'\nERROR [BaseDB: update_table_date_chatid] ERROR: {str(eR)}')
+                self.Logger.log_info(f'\nERROR [BaseDB: update_table_date_chatid] ERROR: {str(eR)}')
+                await session.rollback()
+                return None
+        return list_res
+
+
 
     # Находим в таблице 'task' и 'frag' строки с path_frag
     # записываем словарь значений
