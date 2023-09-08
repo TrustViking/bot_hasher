@@ -22,25 +22,33 @@ class HasherVid:
     """Modul for hasher video"""
     countInstance=0
     #
-    def __init__(self, 
+    def __init__(self,
+                 folder_video,
+                 folder_kframes, 
                  log_file='hashervid_log.txt', 
                  log_level=logging.DEBUG,
-                 threshold=20,
-                 threshold_keyframes=0.3,
+                 hash_length_factor=0.25, # множитель (0.3*len(hash)) для определения порога расстояния Хэминга  
+                 threshold_keyframes=0.25, # порог (больше порог, меньше кадров) для гистограммы ключевых кадров (0-1)
+                 withoutlogo=False,
                 #  max_download=3,
                  ):
         HasherVid.countInstance += 1
         self.countInstance = HasherVid.countInstance
+        self.withoutlogo=withoutlogo
         # Logger
         self.Logger = Logger(log_file=log_file, log_level=log_level)
         self.Db = BaseDB(logger=self.Logger)
-        self.Cmp=VidCompar(threshold=threshold, threshold_keyframes=threshold_keyframes)
+        self.save_file_path=os.path.join(sys.path[0], folder_video)
+        self.path_save_keyframe=os.path.join(sys.path[0], folder_video, folder_kframes)
+        self.Cmp=VidCompar(save_file_path=self.save_file_path,
+                           path_save_keyframe=self.path_save_keyframe,
+                           hash_length_factor=hash_length_factor, 
+                           threshold_keyframes=threshold_keyframes,
+                           withoutlogo=withoutlogo)
         # self.max_download = max_download
         self.days_del=2
         self.time_del = 24 * 60 * 60 * self.days_del #  
         # self.square_size=190
-        self.save_file_path=os.path.join(sys.path[0], 'diff_video')
-        self.path_save_keyframe=os.path.join(sys.path[0], 'diff_video', 'keyframes')
         self._create_save_directory()
         self._print()
     #
@@ -71,7 +79,6 @@ class HasherVid:
             self.Logger.log_info(f'\nERROR[HasherVid {name_func}] ERROR: {eR}') 
             return None
 
-
     # синхронная обертка для безопасного выполнения методов
     def safe_execute(self, func, name_func: str = None):
         try:
@@ -81,7 +88,6 @@ class HasherVid:
             print(f'\nERROR[HasherVid {name_func}] ERROR: {eR}') 
             self.Logger.log_info(f'\nERROR[HasherVid {name_func}] ERROR: {eR}') 
             return None
-
 
     # из 'diff' скачанные видео, но не сравнивали 
     async def rows4diff (self):
@@ -122,63 +128,12 @@ class HasherVid:
                     print(f"\n[Hashervid delete_old_files] Не удалось удалить файл {full_path}: {eR}")
                     self.Logger.log_info(f'\nERROR [Hashervid delete_old_files] ERROR: {eR}')
 
-    # точка входа сравнения файлов
-    # надо будет добавить параллельное выполнение
-    async def comparator_files(self, rows: Row, withoutlogo=True):
-        result=[]
-        for row in rows:
-            date=str(row.date_message)
-            path_first=row.path_file_first
-            path_second=row.path_file_second
-            
-            # удаляем лого
-            if withoutlogo:
-                path_first = self.Cmp.del_logo(path_first)
-                if not path_first:
-                    print(f'\n[VidCompar is_video_unique] лого не удалили c первого видео')
-                    return None
-                path_second = self.Cmp.del_logo(path_second)
-                if not path_second:
-                    print(f'\n[VidCompar is_video_unique] лого не удалили со второго видео')
-                    return None
-            else: print(f'\n[VidCompar is_video_unique] Лого не будем удалять\n')
-            
-            # сравниваем видео
-            similars = self.Cmp.is_video_unique(path_first, path_second)
-            if not similars:
-                print(f'\n[HasherVid comparator_files] Похожих ключевых файлов не обнаружено\n'
-                      f'Это совсем разные файлы')
-                return None
-            # создаем и проверяем место сохранения ключевых схожих кадров
-            path2file = os.path.join(self.path_save_keyframe, date.replace(' ', '_').replace(':', '_'))
-            self._create_save_directory(path2file)
-            #
-            similar_pairs, similar_frames = similars
-            # сохраняем на диск похожие ключевые кадры
-            for index, similar_frame in enumerate(similar_frames):
-                #
-                frame_1, frame_2 = similar_frame
-                image_pil_1 = Image.fromarray(np.uint8(frame_1), 'RGB')
-                image_pil_2 = Image.fromarray(np.uint8(frame_2), 'RGB')
-                full_name_file_1 = os.path.join(path2file, 'keyframe_'+str(index)+'_1.png') 
-                full_name_file_2 = os.path.join(path2file, 'keyframe_'+str(index)+'_2.png') 
-                # сохранение в формате PNG
-                self.safe_execute(image_pil_1.save(full_name_file_1), 'comparator_files')
-                self.safe_execute(image_pil_2.save(full_name_file_2), 'comparator_files')
-            if not await self.Db.update_table_date_chatid(['diff'], date, row.chat_id, {'in_work':'diff'}):
-                print(f'\nERROR [HasherVid comparator_files] отметить в таблице сравнение файлов \n{path_first} \n'
-                      f'{path_second} не получилось')
-                continue
-            result.append((path_first, path_second))
-        return result  
-
-
 #
 # MAIN **************************
 async def main():
     print(f'\n**************************************************************************')
     print(f'\nБот готов сравнивать видео')
-    hasher=HasherVid() 
+    hasher=HasherVid(folder_video='diff_video', folder_kframes='keyframes') 
     minut=1
     while True:
         print(f'\nБот по сравнению видео ждет {minut} минут(ы) ...')
@@ -189,17 +144,15 @@ async def main():
         await hasher.delete_old_files()
 
         # формируем список сравнений из таблицы diff
-        try:
-            rows = await hasher.rows4diff() 
-        except Exception as eR:
-            print(f'\nERROR[HasherVid main] ERROR: {eR}') 
-            hasher.Logger.log_info(f'\nERROR[HasherVid main] ERROR: {eR}') 
+        rows = await hasher.safe_await_execute(hasher.rows4diff(), '[HasherVid main] hasher.rows4diff') 
         if not rows: continue
-        # есть задачи, убираем лого и делаем сравнение
-        diff = await hasher.comparator_files(rows, withoutlogo=False)
-        if not diff: 
-            print(f'\n[HasherVid main] ERROR не сделали сравнение ...')
-            hasher.Logger.log_info(f'\n[HasherVid main] ERROR не сделали сравнение ...')
+        # точка входа сравнения файлов 
+        # надо будет добавить параллельное выполнение
+        for row in rows:
+            path2file = await hasher.Cmp.compar_vid_hash(row)
+            if not path2file:
+                print(f'\n[HasherVid compar_vid_hash] Не записали на диск схожие кадры')
+
 
 if __name__ == "__main__":
     asyncio.run(main())
