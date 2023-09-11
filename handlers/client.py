@@ -31,23 +31,32 @@ class Handlers4bot:
     """
     countInstance=0
     #
-    def __init__(self, logger: Logger):
+    def __init__(self, 
+                 logger: Logger,
+                 folder_video= 'diff_video',
+                 folder_kframes = 'diff_kframes',
+                 size_limit = 524288000,
+                    ): 
+
         Handlers4bot.countInstance+=1
         self.countInstance=Handlers4bot.countInstance
         self.countHandlers=0
+        # api pyrogram
         self.api_id = os.getenv('TELEGRAM_API_ID')
         self.api_hash = os.getenv('TELEGRAM_API_HASH')
+        # api BOT
         self.bot=bot
         self.dp=dp
         self.token=token
+        #
+        self.path_save_vid=os.path.join(sys.path[0], folder_video)
+        self.path_save_keyframe=os.path.join(sys.path[0], folder_kframes)
+        self.size_limit = size_limit # 500Mb
+        #
         self.Logger = logger
         self.Db=BaseDB(logger=self.Logger)
-        # self.Cmp=VidCompar()
         self.diction={}
-        self.size_limit = 524288000 # 500Mb
-        self.path_save_vid=os.path.join(sys.path[0], 'diff_video')
-        self.path_save_keyframe=os.path.join(sys.path[0], 'diff_video', 'keyframes')
-
+        #
         self._new_client()
         self._create_save_directory()
         #
@@ -75,9 +84,9 @@ class Handlers4bot:
 
     # обертка для безопасного выполнения методов
     # async def safe_execute(self, coroutine: Callable[..., Coroutine[Any, Any, T]]) -> T:
-    async def safe_execute(self, coroutine, name_func: str = None):
+    async def safe_await_execute(self, coroutine, name_func: str = None):
         try:
-            print(f'\n***Handlers4bot safe_execute: выполняем обертку ****')
+            # print(f'\n***Handlers4bot safe_execute: выполняем обертку ****')
             return await coroutine
         except Exception as eR:
             print(f'\nERROR[Handlers4bot {name_func}] ERROR: {eR}') 
@@ -201,7 +210,7 @@ class Handlers4bot:
             full_saving_path = await app.download_media(message.video, directory, progress=self.progress_bar)
             print(f'\n[Handlers4bot process_second_video] full_saving_path: {full_saving_path} \n')
         
-        await bot.send_message(message.chat.id, "\nВторое видео скачано!")  
+        await bot.send_message(message.chat.id, "\nВторое видео скачано! \nРезультаты анализа пришлю сюда")  
         # формируем вторую часть строки таблицы task
         self.diction['time_task']=int(time())
         self.diction['video_id_second']=file_id 
@@ -219,6 +228,8 @@ class Handlers4bot:
         self.diction['result_kframe']='?_kframe'
         self.diction['result_diff']='?_similar'
         self.diction['num_similar_pair']='?_similar'
+        self.diction['save_sim_img']='not_save'
+        self.diction['path_sim_img']='not_path'
         self.diction['sender_user']='not_sender'
         # записываем словарь значений в таблицу task 
         await self.Db.insert_data('diff', self.diction)
@@ -226,10 +237,6 @@ class Handlers4bot:
         await self.Db.print_data('diff')
         # снимаем состояние 
         await state.finish()
-
-        # # начинаем сравнивать видео на уникальность
-        # await self.comparator_files(self.diction['path_file_first'], self.diction['path_file_second'])
-
 
     # регистрация хэндлеров
     async def register_handlers_client(self):
@@ -246,8 +253,17 @@ class Handlers4bot:
         self.dp.register_message_handler(self.any2start, content_types=ContentType.ANY, state='*')
 
 
-
-
+    # отправка пользователю пары схожих ключевых кадров
+    # async def send_user_image(self, path_folder: str, nfile: str, chat_id: str):
+    #     #
+    #     # with open(path, 'rb') as photo:
+    #     #     await self.bot.send_photo(chat_id, photo)
+    #     full_path = os.path.join(path_folder, nfile)
+    #     return await self.safe_await_execute(self.bot.send_photo(chat_id=chat_id, 
+    #                               photo=full_path, 
+    #                               caption=nfile[:-4],
+    #                               ), 'send_user_image')
+        
 
 
 

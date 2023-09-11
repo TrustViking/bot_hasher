@@ -3,7 +3,8 @@
 from time import sleep, time
 import datetime
 from PIL import Image
-
+import argparse
+from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy.engine.result import Row
 import os, sys, asyncio, logging
@@ -23,40 +24,107 @@ class HasherVid:
     countInstance=0
     #
     def __init__(self,
-                 folder_video,
-                 folder_kframes, 
-                 log_file='hashervid_log.txt', 
+                 folder_video= 'diff_video',
+                 folder_kframes = 'diff_kframes',
+                 log_file='hashervid_log.md', 
                  log_level=logging.DEBUG,
-                 hash_length_factor=0.25, # множитель (0.3*len(hash)) для определения порога расстояния Хэминга  
-                 threshold_keyframes=0.25, # порог (больше порог, меньше кадров) для гистограммы ключевых кадров (0-1)
+                 hash_factor=0.2, # множитель (0.n*len(hash)) для определения порога расстояния Хэминга  
+                 threshold_keyframes=0.3, # порог (больше порог, меньше кадров) для гистограммы ключевых кадров (0-1)
                  withoutlogo=False,
-                #  max_download=3,
+                 logo_size=180,
                  ):
         HasherVid.countInstance += 1
         self.countInstance = HasherVid.countInstance
+        #
+        self.log_file=log_file
+        self.log_level=log_level
+        self.folder_video=folder_video
+        self.folder_kframes=folder_kframes
+        self.hash_factor=hash_factor
+        self.threshold_keyframes=threshold_keyframes
         self.withoutlogo=withoutlogo
+        self.logo_size=logo_size
+        
+        # Разбор аргументов
+        self._arg_parser()
+        
         # Logger
-        self.Logger = Logger(log_file=log_file, log_level=log_level)
+        self.Logger = Logger(self.log_file, self.log_level)
         self.Db = BaseDB(logger=self.Logger)
-        self.save_file_path=os.path.join(sys.path[0], folder_video)
-        self.path_save_keyframe=os.path.join(sys.path[0], folder_video, folder_kframes)
-        self.Cmp=VidCompar(save_file_path=self.save_file_path,
-                           path_save_keyframe=self.path_save_keyframe,
-                           hash_length_factor=hash_length_factor, 
-                           threshold_keyframes=threshold_keyframes,
-                           withoutlogo=withoutlogo)
-        # self.max_download = max_download
+        #
+        self.save_file_path=os.path.join(sys.path[0], self.folder_video)
+        self.path_save_keyframe=os.path.join(sys.path[0], self.folder_kframes)
+        # создаем класс VidCompar
+        self.Cmp=self._cmp_def()
         self.days_del=2
         self.time_del = 24 * 60 * 60 * self.days_del #  
-        # self.square_size=190
         self._create_save_directory()
         self._print()
     #
+    # создаем класс VidCompar
+    def _cmp_def(self):
+        return VidCompar(
+                        save_file_path=self.save_file_path,
+                        path_save_keyframe=self.path_save_keyframe,
+                        log_file=self.log_file,
+                        hash_factor=self.hash_factor, 
+                        threshold_keyframes=self.threshold_keyframes,
+                        withoutlogo=self.withoutlogo,
+                        logo_size=self.logo_size
+                            )
+
     # выводим № объекта
     def _print(self):
-        print(f'[HasherVid] countInstance: [{self.countInstance}]')
-        self.Logger.log_info(f'[HasherVid] countInstance: [{self.countInstance}]')
+        print(f'\n[HasherVid] countInstance: [{self.countInstance}]')
+        self.Logger.log_info(f'\n[HasherVid] countInstance: [{self.countInstance}]\n')
+        print(f'Аргументы:\n'
+              f'log_file: {self.log_file}\n'
+              f'log_level: {self.log_level}\n'
+              f'folder_video: {self.folder_video}\n'
+              f'folder_kframes: {self.folder_kframes}\n'
+              f'hash_factor: {self.hash_factor}\n'
+              f'threshold_keyframes: {self.threshold_keyframes}\n'
+              f'logo_size: {self.logo_size}\n'
+              f'withoutlogo: {self.withoutlogo}\n'
+              )
 #
+    # добавление аргументов строки
+    def _arg_added(self, parser: ArgumentParser):
+        # Добавление аргументов
+        parser.add_argument('-v', '--folder_video', type=str, help='Папка для видео')
+        parser.add_argument('-k', '--folder_kframes', type=str, help='Папка для схожих кадров')
+        parser.add_argument('-f', '--log_file', type=str, help='Имя журнала логгирования')
+        parser.add_argument('-l', '--log_level', type=str, help='Уровень логгирования')
+        # множитель (0.n*len(hash)) для определения порога расстояния Хэминга  
+        parser.add_argument('-m', '--hash_factor', type=float, help='Множитель порога')
+        # порог (больше порог, меньше кадров) для гистограммы ключевых кадров (0-1)
+        parser.add_argument('-t', '--threshold_keyframes', type=float, help='Порог ключевых кадров')
+        parser.add_argument('-z', '--logo_size', type=int, help='Cторона квадрата для удаления лого')
+        parser.add_argument('--withoutlogo', action='store_true', help='Удаляем лого')
+
+    # Разбор аргументов строки
+    def _arg_parser(self):
+        # Инициализация парсера аргументов
+        parser = ArgumentParser()
+        # print(f'type parser: {type(parser)}')
+        # добавление аргументов строки
+        self._arg_added(parser)
+        args = parser.parse_args()
+
+        if args.log_file: self.log_file=args.log_file
+        # (CRITICAL, ERROR, WARNING,INFO, DEBUG)
+        # print(f'args.log_level: {args.log_level}')
+        # if args.log_level: self.log_level=logging.getLevelName(args.log_level.upper())
+        if args.log_level: self.log_level=int(args.log_level)
+        # print(f'self.log_level: {self.log_level}')
+        #
+        if args.folder_video: self.folder_video=args.folder_video
+        if args.folder_kframes: self.folder_kframes=args.folder_kframes
+        if args.hash_factor: self.hash_factor=args.hash_factor
+        if args.threshold_keyframes: self.threshold_keyframes=args.threshold_keyframes
+        if args.logo_size: self.logo_size=args.logo_size
+        if args.withoutlogo: self.withoutlogo=True
+    
     # проверка директории для фрагментов видео
     def _create_save_directory(self, path: str = None):
         """
@@ -133,7 +201,7 @@ class HasherVid:
 async def main():
     print(f'\n**************************************************************************')
     print(f'\nБот готов сравнивать видео')
-    hasher=HasherVid(folder_video='diff_video', folder_kframes='keyframes') 
+    hasher=HasherVid() 
     minut=1
     while True:
         print(f'\nБот по сравнению видео ждет {minut} минут(ы) ...')

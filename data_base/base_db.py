@@ -119,7 +119,6 @@ class BaseDB:
                             column_name: str, 
                             params_status: str):
         table=self.table.get(name_table)
-        #print(f'\n[BaseDB read_data_one] table: {name_table}, type: {type(table)}')
         try:
             async with self.Session() as session:
                 # Формируем запрос с фильтром
@@ -132,7 +131,6 @@ class BaseDB:
         except SQLAlchemyError as eR:
             print(f'[BaseDB: read_data_one] ERROR: {str(eR)}')
             self.Logger.log_info(f'[BaseDB: read_data_one] ERROR: {str(eR)}')
-            # await session.rollback()
             return None
     #
     # читаем все данные из таблицы исходя из двух условий 

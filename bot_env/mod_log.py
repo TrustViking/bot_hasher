@@ -23,7 +23,7 @@ class Logger:
         - logging.CRITICAL: Критические ошибки, которые приводят к прекращению работы программы.
         """
         self.log_path = os.path.join(sys.path[0], 'log_file')
-        self.log_file = os.path.join(sys.path[0], 'log_file', log_file or 'log.txt')
+        self.log_file = os.path.join(sys.path[0], 'log_file', log_file or 'log.md')
         self.log_level = log_level
         self._create_log_directory()
         self.logger = self._setup_logger()

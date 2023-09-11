@@ -20,7 +20,7 @@ class Make_db(AsyncAttrs, DeclarativeBase):
     countInstance=0
     #
     def __init__(self, 
-                 log_file='mkdb_log.txt', 
+                 log_file='mkdb_log.md', 
                  log_level=logging.DEBUG,
                  db_file='db_file.db',
                  ):
