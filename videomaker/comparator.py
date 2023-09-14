@@ -248,7 +248,7 @@ class VidCompar:
                 bin_hash1 = self.hex_to_binary(hashes_first[i], xhash)
                 bin_hash2 = self.hex_to_binary(hashes_second[j], xhash)
                 matrix_distance[i][j] = self.hamming_distance(bin_hash1, bin_hash2)
-        # print(f'\n[VidCompar matrix_distance_hashes] matrix_distance: \n{matrix_distance}')
+        print(f'\nМетод [{xhash}] Matrix_distance: \n{matrix_distance}')
         return matrix_distance    
 
     # анализируем матрицу расстояний ключевых кадров
@@ -270,7 +270,7 @@ class VidCompar:
                 d = matrix_distance[i][j]
                 # Если расстояние меньше порога, добавляем в список похожих пар
                 if d < threshold:
-                    similar_pairs[(i, j)]=(d, xhash)
+                    similar_pairs[(i, j)]=(d, xhash, threshold)
         
         # общая статистика по матрице
         # количество расстояний в матрице меньше пороговового значения
@@ -279,18 +279,15 @@ class VidCompar:
         min_distance = np.min(matrix_distance)
         # максимальное расстояние в матрице
         max_distance = np.max(matrix_distance)
-        print(f'\n[VidCompar analyze_distance_matrix] \n'
-              f'Метод: [{xhash}]\n'
+        print(f'\nМетод: [{xhash}]\n'
+              f'Количество похожих ключевых кадров: *[{similar_distance}]\n'
               f'Порог расстояний между ключевыми кадрами:  {threshold}\n'
-              f'Количество похожих ключевых кадров: {similar_distance}\n'
-              f'Похожие ключевые кадры  первого видео: [{int(100 * similar_distance / num_rows)}%]\n'
-              f'Похожие ключевые кадры  второго видео: [{int(100 * similar_distance / num_cols)}%]\n'
-              f'Размерность матрицы: {matrix_distance.shape}\n'
-              f'Общее количество элементов в матрице: {num_rows * num_cols}\n'
               f'Минимальное значение в матрице: {min_distance}\n'
               f'Максимальное значение в матрице: {max_distance}\n'
+              f'Размерность матрицы: {matrix_distance.shape}\n'
+              f'Общее количество элементов в матрице: {num_rows * num_cols}'
             )
-        return similar_pairs # (i, j)=(d, xhash)
+        return similar_pairs # (i, j)=(d, xhash, threshold)
 
     # список хэшей ключевых кадров
     def hashes_keyframes(self, keyframes_first: list, keyframes_second: list) ->List[Tuple]:
@@ -324,31 +321,31 @@ class VidCompar:
             # матрица расстояний между хэшами
             matrix_distance = self.safe_execute(self.matrix_distance_hashes(hashes_first, hashes_second, xhash), 'VidCompar diff_hash matrix_distance_hashes')
             # анализ матрицы расстояний между хэшами
-            # словарь {(i, j):(d, xhash)} схожих ключевых кадров
+            # словарь {(i, j)=(d, xhash, threshold)} схожих ключевых кадров
             dict_similar_pairs = self.safe_execute(self.analyze_distance_matrix(matrix_distance, xhash), 'VidCompar diff_hash analyze_distance_matrix')
             if isinstance(dict_similar_pairs, dict) and not dict_similar_pairs:
-                print(f'[VidCompar diff_hash] метод [{xhash}] не определил ПОХОЖИХ КЛЮЧЕВЫХ КАДРОВ')
+                print(f'Метод [{xhash}] не определил ПОХОЖИХ КЛЮЧЕВЫХ КАДРОВ')
                 continue
             xhash_similar_pairs[xhash]=dict_similar_pairs
-        return xhash_similar_pairs # {xhash: {(i, j):(d, xhash)}}
+        return xhash_similar_pairs # {xhash: {# (i, j)=(d, xhash, threshold)}}
 
     # фильтруем словарь всех методов на уникальность 
-    # {xhash: {(i, j):(d, xhash)}}
+    # {xhash: {(i, j)=(d, xhash, threshold)}}
     def filter_diction_hash(self, diction: dict):
         all_diction={}
         # print(f'\n[VidCompar filter_diction_hash] \n'
         #       f'Количество отобранных элементов в diction: [{len(diction.items())}]')
-        for x_hash, diction_ij_dhash in diction.items():
-            for (i, j), (d, original_xhash) in diction_ij_dhash.items():
+        for x_hash_, diction_ij_dhash in diction.items():
+            for (i, j), (d, xhash, threshold) in diction_ij_dhash.items():
                 if (i, j) not in all_diction:
-                    all_diction[(i, j)]=(d, original_xhash)
+                    all_diction[(i, j)]=(d, xhash, threshold)
                 else:
-                    d_in_dict, xhash = all_diction[(i, j)]
+                    d_in_dict, xhash_in_dict, threshold_in_dict = all_diction[(i, j)]
                     if d < d_in_dict:
-                        all_diction[(i, j)]=(d, xhash)
+                        all_diction[(i, j)]=(d, xhash, threshold)
         # print(f'\n[VidCompar filter_diction_hash] \n'
         #       f'Количество отобранных схожих пар ключевых кадров: [{len(all_diction.items())}]')
-        return all_diction # (i, j):(d, xhash)
+        return all_diction # {(i, j)=(d, xhash, threshold)}
 
     # создаем ключевые кадры, 
     # списки их хэшей, сравниваем хэши, 
@@ -375,8 +372,7 @@ class VidCompar:
                 print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
             return []
         elif keyframes_first:
-            print(f'\n[VidCompar diff_video] \n'
-                  f'Пороговое значение определения ключевых кадров: [{self.threshold_keyframes}]\n'                  
+            print(f'\nПороговое значение определения ключевых кадров: [{self.threshold_keyframes}]\n'                  
                   f'В первом видео [{len(keyframes_first)}] ключевых кадров')
             # отметка в БД
             diction={'num_kframe_1':str(len(keyframes_first))}
@@ -400,9 +396,8 @@ class VidCompar:
                 print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
             return []
         elif keyframes_second:
-            print(f'\n[VidCompar diff_video] \n'
-                  f'Пороговое значение определения ключевых кадров: [{self.threshold_keyframes}]\n'                  
-                  f'Во втором видео [{len(keyframes_first)}] ключевых кадров')
+            print(f'\nПороговое значение определения ключевых кадров: [{self.threshold_keyframes}]\n'                  
+                  f'Во втором видео [{len(keyframes_second)}] ключевых кадров')
             # отметка в БД
             diction={'num_kframe_2':str(len(keyframes_second)), 
                      'result_kframe':str(len(keyframes_first)+len(keyframes_second)),
@@ -419,7 +414,7 @@ class VidCompar:
             return None
             #
         # сравниваем и получаем пары похожих хэшей всех методов 
-        # {xhash: {(i, j):(d, xhash)}}
+        # {xhash: {# (i, j)=(d, xhash, threshold)}}
         dict_similar_pairs = self.diff_hash(hashes_kframes)
         if isinstance(dict_similar_pairs, dict) and not dict_similar_pairs:
             print(f'\n[VidCompar diff_video] ни один метод не определил ПОХОЖИЕ КЛЮЧЕВЫЕ КАДРЫ')
@@ -429,36 +424,35 @@ class VidCompar:
                 print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
             return set()
         # фильтруем словарь всех методов на уникальность 
-        # (i, j):(d, xhash) <- {xhash: {(i, j):(d, xhash)}} 
+        # {(i, j)=(d, xhash, threshold)} <- {xhash: {# (i, j)=(d, xhash, threshold)}} 
         similar_pairs = self.filter_diction_hash(dict_similar_pairs)
         # список похожих фото и расстояние Хэмминга 
         similar_frames = []
-        for (i, j), (d, xhash) in similar_pairs.items():
-            similar_frame=(keyframes_first[i], keyframes_second[j], d, xhash)
+        for (i, j), (d, xhash, threshold) in similar_pairs.items():
+            similar_frame=(keyframes_first[i], keyframes_second[j], d, xhash, threshold)
             similar_frames.append(similar_frame)
-        return similar_frames # [(frame, frame, d, xhash)]
+        return similar_frames # [(frame, frame, d, xhash, threshold)]
 
-    # записываем на диск схожие файлы
+    # записываем на диск схожие кадры
     def save_similar_frames(self, path2file: str, 
                                   index: int, 
                                   frame_1: np.ndarray, 
                                   frame_2: np.ndarray, 
                                   d: int,
-                                  xhash: str):
-        # frame_1, frame_2, d, xhash = similar_frame
-        image_pil_1 = Image.fromarray(np.uint8(frame_1), 'RGB')
-        image_pil_2 = Image.fromarray(np.uint8(frame_2), 'RGB')
-        name_1 = str(xhash+'_id'+str(index)+'_d'+str(int(d))+'_1.png')
-        name_2 = str(xhash+'_id'+str(index)+'_d'+str(int(d))+'_2.png')
+                                  xhash: str,
+                                  threshold: int):
+        # полный путь к файлам
+        name_1 = str('id'+str(index)+'_'+xhash+'_d'+str(int(d))+'_'+str(threshold)+'_1.png')
+        name_2 = str('id'+str(index)+'_'+xhash+'_d'+str(int(d))+'_'+str(threshold)+'_2.png')
+        # name_2 = str('id'+str(index)+'_'+xhash+'_d'+str(int(d))+'_2.png')
         full_name_file_1 = os.path.join(path2file, name_1) 
         full_name_file_2 = os.path.join(path2file, name_2) 
         # сохранение в формате PNG
+        image_pil_1 = Image.fromarray(np.uint8(frame_1), 'RGB')
+        image_pil_2 = Image.fromarray(np.uint8(frame_2), 'RGB')
         self.safe_execute(image_pil_1.save(full_name_file_1), 'comparator_files')
         self.safe_execute(image_pil_2.save(full_name_file_2), 'comparator_files')
-        
         return full_name_file_1, full_name_file_2
-
-
 
     # точка входа сравнения файлов
     # <class 'sqlalchemy.engine.row.Row'> 
@@ -480,7 +474,7 @@ class VidCompar:
         else: print(f'\n[VidCompar compar_vid_hash] Лого не будем удалять\n')
         
         ## основной метод сравнения видео
-        # [(frame, frame, d, xhash)]
+        # # [(frame, frame, d, xhash, threshold)]
         similar_frames = await self.diff_video(row)
         #
         # нет схожих кадров
@@ -515,7 +509,7 @@ class VidCompar:
                     f'{path_second} не получилось')
         
         # сохраняем на диск похожие ключевые кадры
-        # [(frame, frame, d, xhash)]
+        # # [(frame, frame, d, xhash, threshold)]
         path2file = os.path.join(self.path_save_keyframe, date.replace(' ', '_').replace(':', '_'))
         self._create_save_directory(path2file)
         for index, similar_frame in enumerate(similar_frames):

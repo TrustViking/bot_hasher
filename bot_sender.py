@@ -159,22 +159,41 @@ class Sender:
         chat_id = str(row.chat_id)
         nfiles = sorted(os.listdir(path_folder))
         for i in range(0, len(nfiles), 2):
-            sleep(3) # иначе выдает ошибку при очень частых сообщениях ERROR: Flood control exceeded
-            # name = str(xhash+'_id'+str(index)+'_d'+str(int(d))+'_2.png')
-            nfiles_1 = nfiles[i].split('_')
+            sleep(5) # иначе выдает ошибку при очень частых сообщениях ERROR: Flood control exceeded
+            # name_2 = str('id'+str(index)+'_'+xhash+'_d'+str(int(d))+'_'+str(threshold)+'_2.png')
+            nfiles_1 = nfiles[i].split('_') # id0, dhash, d10, 12, 1.png
             nfiles_2 = nfiles[i+1].split('_')
-            method_hash_1 = nfiles_1[0] # xhash
-            pair_id_1 = nfiles_1[1][2:] # '_id'+str(index)
-            pair_id_2 = nfiles_2[1][2:] # '_id'+str(index)
-            if pair_id_1 != pair_id_2:
-                print(f'\nERROR [Sender send_kframes] В отобранных ключевых кадрах не совпала пара: \n'
-                      f'pair_id_1: {pair_id_1} и pair_id_2: {pair_id_2}')
-                continue
+            id_1 = nfiles_1[0][2:] # '_id'+str(index)
+            id_2 = nfiles_2[0][2:] # '_id'+str(index)
+            method_hash_1 = nfiles_1[1] # xhash
+            method_hash_2 = nfiles_2[1] # xhash
             d_1 = nfiles_1[2][1:] # '_d'+str(int(d))
             d_2 = nfiles_2[2][1:] # '_d'+str(int(d))
-            msg=(f'метод: {method_hash_1} \U0001F447 '
-                 f'пара: {pair_id_1} '
-                 f'расстояние: {d_1}')
+            threshold_1 = nfiles_1[3] # порог схожести
+            threshold_2 = nfiles_2[3] # порог схожести
+            if id_1 != id_2:
+                print(f'\nERROR [Sender send_kframes] В отобранных ключевых кадрах не совпала id пары: \n'
+                      f'id_1: {id_1} и d_2: {d_2}')
+                continue
+            if method_hash_1 != method_hash_2:
+                print(f'\nERROR [Sender send_kframes] В отобранных ключевых кадрах не совпал метод пары: \n'
+                      f'method_hash_1: {method_hash_1} и method_hash_2: {method_hash_2}')
+                continue
+            if d_1 != d_2:
+                print(f'\nERROR [Sender send_kframes] В отобранных ключевых кадрах не совпало расстояние: \n'
+                      f'd_1: {d_1} и d_2: {d_2}')
+                continue
+            if threshold_1 != threshold_2:
+                print(f'\nERROR [Sender send_kframes] В отобранных ключевых кадрах не совпал порог схожести: \n'
+                      f'd_1: {threshold_1} и d_2: {threshold_2}')
+                continue
+            
+            msg=(
+                f'id: {id_1} '
+                f'метод: {method_hash_1} \U0001F447 '
+                f'расстояние: {d_1} '
+                f'порог: {threshold_1} '
+                 )
             message = await self.send_msg(row, msg)
             if not message:
                 print(f'\n[Sender send_kframes] Не отправили пользователю сообщение: {msg}')
@@ -254,9 +273,17 @@ async def main():
         
         # нет similar_pair
         rows_notsimilars = await sender.rows_notsimilar()
-        if rows_notsimilars: 
+        if rows_notsimilars:
             for row in rows_notsimilars:
-                msg = (f'Схожих кадров для сравнения не определили. \n'
+                threshold_kframes=row.threshold_kframes
+                hash_factor=row.hash_factor
+                num_kframe_1=row.num_kframe_1
+                num_kframe_2=row.num_kframe_2
+                msg = (f'Схожих кадров не определили \n'
+                       f'Порог ключевых кадров: [{threshold_kframes}]\n'
+                       f'В первом видео ключевых кадров: [{num_kframe_1}]\n'
+                       f'Во втором видео ключевых кадров: [{num_kframe_2}]\n'
+                       f'Порог схожести кадров: [{hash_factor}]\n'
                        f'Либо увеличьте порог определения схожих кадров либо этих кадров вообще нет' )
                 messege = await sender.send_msg(row, msg)
                 if not messege:
