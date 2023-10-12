@@ -1,192 +1,216 @@
 #!/usr/bin/env python3
 #
-import subprocess, os, sys, psutil, pynvml, logging, asyncio
-from bot_env.mod_log import Logger
-import argparse
-from argparse import ArgumentParser
+from typing import Coroutine, List, Optional
+from time import strftime
+from os.path import basename, join, isfile, abspath, dirname
+from os import listdir
+import sys
+from sys import platform, argv, path, version_info
+from subprocess import run as sub_run
+from subprocess import CalledProcessError
+from asyncio import create_subprocess_shell, gather, run 
+from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo, nvmlShutdown
+from psutil import virtual_memory
+#
+from bot_env.bot_init import LogInitializer, BotInitializer, ConfigInitializer
+from bot_env.decorators import safe_await_execute, safe_execute
 
-class Start:
+
+class Start(ConfigInitializer):
     """Module for START"""
     countInstance=0
     #
-    def __init__(self, 
-                 log_file='log.md', 
-                 log_level=logging.DEBUG,
-                 folder_video= 'diff_video',
-                 folder_kframes = 'diff_kframes',
-                 hash_factor=0.3,
-                 threshold_keyframes=0.2,
-                 logo_size=180,
-                 withoutlogo=False,
-                 max_download=3,
-                 ):
+    def __init__(self):
         Start.countInstance += 1
         self.countInstance = Start.countInstance
-        #
-        self.log_file=log_file
-        self.log_level=log_level
-        self.folder_video=folder_video
-        self.folder_kframes=folder_kframes
-        self.hash_factor=hash_factor
-        self.threshold_keyframes=threshold_keyframes
-        self.logo_size=logo_size
-        self.withoutlogo=withoutlogo
-        self.max_download = max_download
-        # Разбор аргументов командной строки
-        self._arg_parser()
+        self.cls_name = self.__class__.__name__
         # Logger
-        self.Logger = Logger(self.log_file, self.log_level)
+        self.config_path = join(dirname(abspath(__file__)), 'config.json')
+        self.log_init = LogInitializer()
+        self.logger = self.log_init.initialize(self.config_path)
+        #
+        self.folder_logfile = self.logger.folder_logfile
+        self.logfile = self.logger.logfile
+        self.loglevel = self.logger.loglevel
+        # config
+        self.config = self.read_config(self.config_path)
+        #
+        self.name_maker_db = self.config.get('name_maker_db')
+        self.folder_db = self.config.get('folder_db')
+        self.name_db = self.config.get('name_db')
+        self.folder_video = self.config.get('folder_video')
+        self.folder_kframes = self.config.get('folder_kframes')
+        self.pause_minut_hasher = self.config.get('pause_minut_hasher')
+        #
         self._print()
 
-        #     
+        #
+
     # выводим № объекта
     def _print(self):
-        print(f'\n[Start] countInstance: [{self.countInstance}]')
-        self.Logger.log_info(f'\n[Start] countInstance: [{self.countInstance}]\n')
-        print(f'Аргументы:\n'
-              f'log_file: {self.log_file}\n'
-              f'log_level: {self.log_level}\n'
-              f'folder_video: {self.folder_video}\n'
-              f'folder_kframes: {self.folder_kframes}\n'
-              f'hash_factor: {self.hash_factor}\n'
-              f'threshold_keyframes: {self.threshold_keyframes}\n'
-              f'logo_size: {self.logo_size}\n'
-              f'withoutlogo: {self.withoutlogo}\n'
-              f'max_download: {self.max_download}\n'
-              )
-    # 
-    # добавление аргументов строки
-    def _arg_added(self, parser: ArgumentParser):
-        # Добавление аргументов
-        parser.add_argument('-v', '--folder_video', type=str, help='Папка для видео')
-        parser.add_argument('-k', '--folder_kframes', type=str, help='Папка для схожих кадров')
-        parser.add_argument('-f', '--log_file', type=str, help='Имя журнала логгирования')
-        parser.add_argument('-l', '--log_level', type=str, help='Уровень логгирования')
-        # множитель (0.n*len(hash)) для определения порога расстояния Хэминга  
-        parser.add_argument('-m', '--hash_factor', type=float, help='Множитель порога')
-        # порог (больше порог, меньше кадров) для гистограммы ключевых кадров (0-1)
-        parser.add_argument('-t', '--threshold_keyframes', type=float, help='Порог ключевых кадров')
-        parser.add_argument('-z', '--logo_size', type=int, help='Cторона квадрата для удаления лого')
-        parser.add_argument('--withoutlogo', action='store_true', help='Удаляем лого')
+        msg = (
+            f"\nStarted at {strftime('%X')}\n"
+            f'[{__name__}|{self.cls_name}] countInstance: [{self.countInstance}]\n'
+            f'platform: [{platform}]\n'
+            f'\nAttributes:\n'
+            )
 
-    # Разбор аргументов строки
-    def _arg_parser(self):
-        # Инициализация парсера аргументов
-        parser = ArgumentParser()
-        # добавление аргументов строки
-        self._arg_added(parser)
-        args = parser.parse_args()
+        attributes_to_print = [
+            'folder_db',
+            'name_db',
+            'folder_logfile',
+            'logfile',
+            'loglevel',
+            'folder_video',
+            'folder_kframes',
+            'pause_minut_hasher',
+        ]
 
-        if args.log_file: self.log_file=args.log_file
-        # (CRITICAL, ERROR, WARNING,INFO, DEBUG)
-        if args.log_level: self.log_level=logging.getLevelName(args.log_level.upper())
-        #
-        if args.folder_video: self.folder_video=args.folder_video
-        if args.folder_kframes: self.folder_kframes=args.folder_kframes
-        if args.hash_factor: self.hash_factor=args.hash_factor
-        if args.threshold_keyframes: self.threshold_keyframes=args.threshold_keyframes
-        if args.logo_size: self.logo_size=args.logo_size
-        if args.withoutlogo: self.withoutlogo=True
+        for attr in attributes_to_print:
+            # "Attribute not found" будет выведено, если атрибут не существует
+            value = getattr(self, attr, "Attribute not found")  
+            msg += f"{attr}: {value}\n"
 
-    # Функция для логирования информации о памяти
+        print(msg)
+        self.logger.log_info(msg)
+
+
+    # выводим состояние системы
+    def system_status(self):
+        file_start = basename(argv[0]) #  [start_hasher.py]
+        print(f'\n[{__name__}|{self.cls_name}] Start...\n')  
+        # Получение абсолютного пути к текущему исполняемому файлу
+        file_path = abspath(__file__) #  [D:\linux\bots\bot_hasher\start_hasher.py]
+        # Получение пути к директории, в которой находится текущий файл
+        current_directory = dirname(file_path)
+        msg = (
+                f'File: [{file_start}]\n'
+                f'Current_directory: [{current_directory}]\n'
+                f'Path file: [{file_path}]\n'
+                f'Data memory:'
+                )
+        print(msg)
+        memory = virtual_memory()
+        for field in memory._fields:
+            print(f"{field}: {getattr(memory, field)}")    
+
+
+    # логирование информации о памяти
     def log_memory(self):
-        self.Logger.log_info(f'****************************************************************')
-        self.Logger.log_info(f'*Data RAM {os.path.basename(sys.argv[0])}: [{psutil.virtual_memory()[2]}%]')
+        self.logger.log_info(f'****************************************************************')
+        self.logger.log_info(f'*Data RAM {basename(argv[0])}: [{virtual_memory()[2]}%]')
         # Инициализируем NVML для сбора информации о GPU
-        pynvml.nvmlInit()
-        deviceCount = pynvml.nvmlDeviceGetCount()
-        self.Logger.log_info(f'\ndeviceCount [{deviceCount}]')
+        nvmlInit()
+        deviceCount = nvmlDeviceGetCount()
+        self.logger.log_info(f'\ndeviceCount [{deviceCount}]')
         for i in range(deviceCount):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            self.Logger.log_info(f"#GPU [{i}]: used memory [{int(meminfo.used / meminfo.total * 100)}%]")
-            self.Logger.log_info(f'****************************************************************\n')
+            handle = nvmlDeviceGetHandleByIndex(i)
+            meminfo = nvmlDeviceGetMemoryInfo(handle)
+            self.logger.log_info(f"#GPU [{i}]: used memory [{int(meminfo.used / meminfo.total * 100)}%]")
+            self.logger.log_info(f'****************************************************************\n')
         # Освобождаем ресурсы NVML
-        pynvml.nvmlShutdown()
+        nvmlShutdown()
+
+
+    # написание python
+    def get_python_command(self):
+        system = sys.platform
+        version_python = sys.version_info
+        if system == 'win32':
+            return 'python'
+        elif system == 'linux':
+            if version_python[0] == 3:
+                return 'python3'
+            else:
+                return 'python'
+        elif system == 'darwin':  # для MacOS
+            if version_python[0] == 3:
+                return 'python3'
+            else:
+                return 'python'
+        else:
+            # для других систем
+            if version_python[0] == 3:
+                return 'python3'
+            else:
+                return 'python'
+
+
+    # List of file names that match all patterns in the name
+    def get_names_files(self, patterns_inname: List[str]) -> List[str]:
+        directory_path = dirname(abspath(__file__))
+        nfiles = sorted(listdir(directory_path))
+        return [nfile for nfile in nfiles if all(pattern in nfile for pattern in patterns_inname)]
+
+
+    # Command line string for running scripts
+    def cmd_string(self, name_scripts: List[str]) -> Optional[List[str]]:
+        directory = dirname(abspath(__file__))
+        full_paths = [join(directory, name_script) for name_script in name_scripts]
+        
+        notexist_paths = [full_path for full_path in full_paths if not isfile(full_path)]
+        if notexist_paths:
+            print(f'\n[{__name__}|{self.cls_name}] ERROR: Files do not exist at these paths: {notexist_paths}')
+        
+        exist_paths = [full_path for full_path in full_paths if isfile(full_path)]
+        if not exist_paths:
+            print(f'\n[{__name__}|{self.cls_name}] ERROR: No existing files! exist_paths: {exist_paths}')
+            return None
+        
+        name_lang = self.get_python_command()
+        return [f'{name_lang} {exist_path}' for exist_path in exist_paths]
+
+
+    # Список скриптов для запуска
+    def bot_scripts(self, patterns_inname: List[str])-> Optional[List[str]]:
+        names_bots = self.get_names_files(patterns_inname)
+        return self.cmd_string(names_bots)
+
 
     # Асинхронная функция для запуска скрипта
-    async def run_script(self, script):
-        self.Logger.log_info(f'[run_script] command: {script}')
-        # Используем asyncio для асинхронного запуска скрипта
-        process = await asyncio.create_subprocess_shell(script)
-        await process.wait()
+    async def subprocess_script(self, script: str):
+        @safe_await_execute(logger=self.logger, name_method='subprocess_script')
+        async def _subprocess_script(script):
+            self.logger.log_info(f'[{__name__}|{self.cls_name}] start script: {script}')
+            print(f'\n[{__name__}|{self.cls_name}] start script: {script}')
 
+            process = await create_subprocess_shell(script)
+            if not process:
+                print(f'\n[{__name__}|{self.cls_name}] ERROR process: {process}')
+                return None
+            
+            await process.wait()
+
+        return await _subprocess_script(script)
+    
 
 # MAIN **************************
 # Главная асинхронная функция
 async def main():
-    print(f'\nСтарт приложения...\n') 
-    # print(f'\n==============================================================================\n')
-    print(f'File: [{os.path.basename(sys.argv[0])}]')
-    print(f'Path: [{sys.path[0]}]') 
-    print(f'Data memory: [{psutil.virtual_memory()}]')
+    #
     # Создаем экземпляр класса Start
     start = Start()
-    start.log_memory()
-    #
-    # Список скриптов для запуска
-    args_bot_telega=''
-    args_bot_hasher=''    
-    
-    if start.folder_video: 
-        folder_video_arg=f'--folder_video {start.folder_video} '
-        args_bot_telega+=folder_video_arg
-        args_bot_hasher+=folder_video_arg
-
-    if start.folder_kframes:
-        folder_kframes_arg=f'--folder_kframes {start.folder_kframes} '
-        args_bot_telega+=folder_kframes_arg
-        args_bot_hasher+=folder_kframes_arg
-    
-    if start.log_file:
-        log_file_arg=f'--log_file {start.log_file} '
-        args_bot_telega+=log_file_arg
-        args_bot_hasher+=log_file_arg
-
-    if start.log_level:
-        log_level_arg=f'--log_level {start.log_level} '
-        args_bot_telega+=log_level_arg
-        args_bot_hasher+=log_level_arg
-
-    if start.hash_factor:
-        hash_factor_arg=f'--hash_factor {start.hash_factor} '
-        args_bot_hasher+=hash_factor_arg
-    
-    if start.threshold_keyframes:
-        threshold_keyframes_arg=f'--threshold_keyframes {start.threshold_keyframes} '    
-        args_bot_hasher+=threshold_keyframes_arg
-    
-    if start.logo_size:
-        logo_size_arg=f'--logo_size {start.logo_size} '
-        args_bot_hasher+=logo_size_arg
-    
-    if start.withoutlogo:
-        withoutlogo_arg='--withoutlogo'
-        args_bot_hasher+=withoutlogo_arg
-    print(f'\n[main start] \nargs_bot_telega: {args_bot_telega}'
-          f'\nargs_bot_hasher: {args_bot_hasher}')
-
-    scripts = [
-        os.path.join(sys.path[0], f'bot_telega.py {args_bot_telega}'),
-        # os.path.join(sys.path[0], f'bot_hasher.py --folder_video {start.folder_video} --folder_kframes {start.folder_kframes} --log_file {start.log_file} --log_level {start.log_level} --hash_factor {start.hash_factor} --threshold_keyframes {start.threshold_keyframes}'),
-        os.path.join(sys.path[0], f'bot_hasher.py {args_bot_hasher}'),
-        os.path.join(sys.path[0], f'bot_sender.py {args_bot_telega}'),
-                ]
-    # создаем БД и таблицы
-    # Запускаем скрипт make_db с помощью subprocess
-    try:
-        subprocess.run(["python3", os.path.join(sys.path[0], 'make_db.py')], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error running make_db: {e}")
-        start.Logger.log_info(f"Error running make_db: {e}")
+    start.log_memory() # логирование информации о памяти
+    start.system_status() # выводим состояние системы
+    # создаем таблицы БД
+    scripts = start.bot_scripts(['script', '.py'])
+    tasks = [start.subprocess_script(script) for script in scripts]
+    await gather(*tasks)
     #
     # Запускаем скрипты асинхронно
-    tasks = [start.run_script(script) for script in scripts]
-    await asyncio.gather(*tasks)
+    # scripts = start.scripts_args() # Список скриптов с аргументами для запуска
+    # tasks = [start.subprocess_script(script) for script in scripts]
+    # await gather(*tasks)
 
 # Запускаем главную асинхронную функцию
 if __name__ == "__main__":
-    asyncio.run(main())
+    run(main())
+
+
+
+
+
+    
 
 
 

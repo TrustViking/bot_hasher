@@ -1,197 +1,122 @@
-import os, sys, cv2, logging 
-# import perception
-from types import NoneType
+
+from typing import Coroutine, Callable, Any
+from time import strftime
+from os.path import isfile, join
+from os import makedirs, remove
+from sys import platform
+
 from PIL import Image
-from typing import Dict, Tuple, List
-from moviepy.editor import VideoFileClip, AudioFileClip
+from typing import Tuple, List
 import numpy as np
 from sqlalchemy.engine.result import Row
+from perception.hashers import PHash, DHash, WaveletHash, MarrHildreth, BlockMean
 
 from bot_env.mod_log import Logger
 from data_base.base_db import BaseDB
-# from perception import tools, hashers
-from perception.hashers import PHash, DHash, WaveletHash, MarrHildreth, BlockMean
-
+from .delogo import Delogo
+from .kframes import Kframes
 
 class VidCompar:
     
     countInstance=0
     
     def __init__(self,
-                 save_file_path,
-                 path_save_keyframe,
-                 log_file='vidcompar_log.md', 
-                 log_level=logging.DEBUG,
-                 hash_factor=0.2, # множитель (0.3*len(hash)) для определения порога расстояния Хэминга 
-                 threshold_keyframes = 0.3, # порог для гистограммы ключевых кадров (0-1)
-                 logo_size=180,
-                 withoutlogo=False,
+                 logger: Logger,
+                 method_db: BaseDB, 
+                 save_file_path: str,
+                 path_save_keyframe: str,
+                #  hash_factor=0.2, # множитель (0.3*len(hash)) для определения порога расстояния Хэминга 
+                #  threshold_keyframes = 0.3, # порог для гистограммы ключевых кадров (0-1)
+                #  logo_size=180,
+                #  number_corner = '2',
+                #  withoutlogo=False,
                  ):
         VidCompar.countInstance += 1
         self.countInstance = VidCompar.countInstance
         #
+        self.Logger = logger
+        self.Db = method_db
         self.save_file_path=save_file_path
         self.path_save_keyframe=path_save_keyframe
-        self.log_file=log_file
-        self.log_level=log_level
-        self.hash_factor=hash_factor
-        self.threshold_keyframes = threshold_keyframes 
-        self.square_size=logo_size
-        self.withoutlogo=withoutlogo
+        # self.hash_factor=hash_factor
+        # self.threshold_keyframes = threshold_keyframes 
+        # self.logo_size=logo_size
+        # self.number_corner = number_corner
+        # self.withoutlogo=withoutlogo
         #
-        self.Logger = Logger(log_file=self.log_file, 
-                             log_level=self.log_level)
-        self.Db = BaseDB(logger=self.Logger)
-        # Порог схожести для определения уникальности
+        # Длина хэшей разных методов
         self.hash_length=64
         self.hash_length_block=968
         self.hash_length_MH=576
+        #
+        self.Dl = Delogo(self.Logger)
+        self.Kf = Kframes(self.Logger)
         self._print()
 
     # выводим № объекта
     def _print(self):
         print(f'\n[VidCompar] countInstance: [{self.countInstance}]')
         self.Logger.log_info(f'\n[VidCompar] countInstance: [{self.countInstance}]\n')
-        print(f'Аргументы:\n'
-              f'log_file: {self.log_file}\n'
-              f'log_level: {self.log_level}\n'
+        msg = (f"Started at {strftime('%X')}\n"
+              f'platform: [{platform}]\n'
+              f'\nАргументы:\n'
+              f'folder_logfile: {self.Logger.folder_logfile}\n'
+              f'logfile: {self.Logger.logfile}\n'
+              f'loglevel: {self.Logger.loglevel}\n'
+              f'folder_db: {self.Db.folder_db}\n'
+              f'name_db: {self.Db.name_db}\n'
               f'save_file_path: {self.save_file_path}\n'
               f'path_save_keyframe: {self.path_save_keyframe}\n'
-              f'hash_factor: {self.hash_factor}\n'
-              f'threshold_keyframes: {self.threshold_keyframes}\n'
-              f'square_size: {self.square_size}\n'
-              f'withoutlogo: {self.withoutlogo}\n'
+            #   f'hash_factor: {self.hash_factor}\n'
+            #   f'threshold_keyframes: {self.threshold_keyframes}\n'
+            #   f'withoutlogo: {self.withoutlogo}\n'
+            #   f'logo_size: {self.logo_size}\n'
+            #   f'number_corner: {self.number_corner}\n'
               )
+        print(msg)
+        self.Logger.log_info(msg)
 
-    # проверка директории для фрагментов видео
-    def _create_save_directory(self, path: str = None):
+    # создаем директорию, если такой папки нет
+    def create_directory(self, paths: list[str]):
         """
         Создает директорию для хранения video и ключевых кадров, 
         если она не существует
-        """
-        if not path:
-            path=self.save_file_path
-        if not os.path.exists(path):
-            os.makedirs(path)
 
-    # синхронная обертка для безопасного выполнения методов
-    def safe_execute(self, func, name_func: str = None):
+         Аргументы:
+        - paths: список строк, каждая из которых является путем к директории, которую необходимо создать.
+        """
+        _ = [makedirs(path,  exist_ok=True) for path in paths]
+
+    # асинхронная обертка для безопасного выполнения методов
+    # async def safe_execute(self, coroutine: Callable[..., Coroutine[Any, Any, T]]) -> T:
+    async def safe_await_execute(self, coroutine: Coroutine, name_func: str = None):
         try:
-            # print(f'\n***HasherVid safe_execute: выполняем обертку ****')
-            return func
+            return await coroutine
         except Exception as eR:
             print(f'\nERROR[VidCompar {name_func}] ERROR: {eR}') 
             self.Logger.log_info(f'\nERROR[VidCompar {name_func}] ERROR: {eR}') 
             return None
 
-    # убираем лого
-    def  del_logo (self, full_path: str):
-        print(f'\n[VidCompar del_logo] Удаляем лого... \n{full_path}\n')
-        # Отделение аудио и сохранение во временный файл
-        with VideoFileClip(full_path) as video_clip:
-            audio_clip = video_clip.audio
-            full_path_audio = full_path + '.ogg'
-            audio_clip.write_audiofile(full_path_audio)
-
-        # Чтение в буфер 'video' из файла с помощью OpenCV
-        video = cv2.VideoCapture(full_path)
-        # данные видеоряда
-        fps = int(video.get(cv2.CAP_PROP_FPS))
-        fourcc = cv2.VideoWriter.fourcc(*'mp4v')
-        frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-        frame_size = (int(video.get(cv2.CAP_PROP_FRAME_WIDTH)), int(video.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-        width, height = frame_size
-        print(f'\n[VidCompar del_logo] \nvideo: {video} \n'
-              f'fps: {fps} \nfourcc: {fourcc} \n'
-              f'frame_size: {frame_size} \n'
-              f'frame_count: {frame_count}')        
-        
-        # удаляем фраг с лого
-        if video and fps and fourcc and frame_size and os.path.isfile(full_path):
-            os.remove(full_path)
-        else: print(f'\nERROR [VidCompar del_logo] video: {video} \nfps: {fps} \nfourcc: {fourcc} \nframe_size: {frame_size}')
-
-        # Координаты верхнего левого угла квадрата маски
-        x1, y1 = width-self.square_size, 0
-        # Координаты нижнего правого угла квадрата маски
-        x2, y2 = width, self.square_size
-        full_path_noaudio = full_path+'_noaudio.mp4'
-        # Определение выходного файла без лого, но и без звука
-        out_file = cv2.VideoWriter(full_path_noaudio, fourcc, fps, frame_size)
-        # чтение буфера video
-        count_frame = 0
+    # синхронная обертка для безопасного выполнения методов
+    def safe_execute(self, func: Callable[..., Any], name_func: str = None):
         try:
-            while video.isOpened():
-                # type(frame): <class 'numpy.ndarray'>
-                # frame.shape: (1080, 1920, 3)
-                ret, frame = video.read()
-                if not ret: break
-                count_frame+=1
-                if count_frame==int(frame_count/2):
-                    print(f'\n[VidCompar del_logo] отработали 50% кадров')
-
-                # Создание маски для области логотипа
-                mask = np.zeros_like(frame[:, :, 0])
-                mask[y1:y2, x1:x2] = 255
-                # Применение инпейнтинга для удаления логотипа
-                result = cv2.inpaint(frame, mask, inpaintRadius=15, flags=cv2.INPAINT_TELEA)
-                out_file.write(result)
+            return func()
         except Exception as eR:
-            print(f"\nERROR [VidCompar del_logo] ERROR инпейнтинг для удаления логотипа: {eR}")
-            self.Logger.log_info(f"\nERROR [VidCompar del_logo] ERROR инпейнтинг для удаления логотипа: {eR}")
+            print(f'\nERROR[VidCompar {name_func}] ERROR: {eR}')
+            self.Logger.log_info(f'\nERROR[VidCompar {name_func}] ERROR: {eR}')
             return None
-        finally:
-                if video: video.release()
-                if out_file: out_file.release()
-        
-        # склеиваем видео без лого и звука
-        with AudioFileClip(full_path_audio) as audio_clip:
-            # загружаем видео без лого в MoviePy
-            with VideoFileClip(full_path_noaudio) as video_clip:
-                # Сохраняем видео без лого + аудио
-                video_clip = video_clip.set_audio(audio_clip)
-                video_clip.write_videofile(filename=full_path, 
-                                           bitrate="8000k", 
-                                           audio_bitrate="384k")
-                # удаляем фраг без лого и звука, а также файл звука
-                if os.path.isfile(full_path_noaudio) and os.path.isfile(full_path_audio):
-                    os.remove(full_path_noaudio)
-                    os.remove(full_path_audio)
-                else: 
-                    print(f'\nERROR [VidCompar del_logo] нет файла full_path: {full_path} \nfull_path_audio: {full_path_audio}')
-        print(f'\n[VidCompar del_logo] logo удалили: \n{full_path}\n')
-        return full_path
 
-    # извлечение ключевых кадров
-    def get_keyframes(self, video_path: str) -> List[np.ndarray]:
-        # список ключевых кадров
-        keyframes = []
-        cap = self.safe_execute(cv2.VideoCapture(video_path), 'get_keyframes cv2.VideoCapture')
-        ret, prev_frame = cap.read()
-        prev_hist = self.safe_execute(cv2.calcHist([prev_frame], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256]), 'get_keyframes calcHist prev_hist')
+    # удаляем файл с диска
+    def delete_files(self, paths: list[str]):
+        """
+        Удаляем файлы
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            # гистограмма текущего кадра
-            curr_hist = self.safe_execute(cv2.calcHist([frame], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256]), 'get_keyframes calcHist curr_hist')
-            # сравниваем предыдущую и текущую гистограммы
-            hist_diff = self.safe_execute(cv2.compareHist(prev_hist, curr_hist, cv2.HISTCMP_BHATTACHARYYA), 'get_keyframes compareHist')
-            # сравнение с пороговым значением ключевого кадра
-            if hist_diff > self.threshold_keyframes:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                keyframes.append(rgb_frame)
-            # текущий отработанный кадр становится предыдущим
-            prev_hist = curr_hist
+         Аргументы:
+        - paths: список строк, каждая из которых является путем к файлу, 
+          который необходимо удалить.
+        """
+        _ = [self.safe_execute(remove(path), 'delete_files') for path in paths  if isfile(path)]
 
-        cap.release()
-
-        if not len(keyframes):
-            print(f'\n[VidCompar get_keyframes] \nПри пороге {self.threshold_keyframes} нет ключевых кадров в файле: \n{video_path}. \n'
-                  f'Надо уменьшить порог определения ключевых кадров или это видео не имеет их вообще')
-            return []
-        return keyframes
     #
     # хэши ключевых кадров PHash
     def phash_keyframes(self, keyframes: list):
@@ -251,17 +176,51 @@ class VidCompar:
         print(f'\nМетод [{xhash}] Matrix_distance: \n{matrix_distance}')
         return matrix_distance    
 
+    # общая статистика по матрице расстояний
+    def stat_distance_matrix(self, 
+                             matrix_distance: np.ndarray, 
+                             xhash: str, 
+                             threshold: int,
+                             ):
+        # количество расстояний в матрице меньше пороговового значения
+        similar_distance = np.sum(matrix_distance < threshold)
+        # минимальное расстояние в матрице
+        min_distance = np.min(matrix_distance)
+        # максимальное расстояние в матрице
+        max_distance = np.max(matrix_distance)
+        num_matrix=matrix_distance.size
+        print(f'\nМетод: [{xhash}]\n'
+              f'Количество похожих ключевых кадров: *[{similar_distance}]\n'
+              f'Порог расстояний между ключевыми кадрами:  {threshold}\n'
+              f'Минимальное значение в матрице: {min_distance}\n'
+              f'Максимальное значение в матрице: {max_distance}\n'
+              f'Размерность матрицы: {matrix_distance.shape}\n'
+              f'Общее количество элементов в матрице: {num_matrix}'
+            )
+        # xhashs=['phash', 'dhash', 'wavelet', 'marrihildreth', 'blockhash']
+        xhash_threshold = xhash+'_threshold'
+        xhash_min_distance = xhash+'_min_distance'
+        xhash_max_distance = xhash+'_max_distance'
+        xhash_matrix_shape = xhash+'_matrix_shape'
+        diction = {xhash:xhash, 
+                   xhash_threshold:int(threshold),
+                   xhash_min_distance:int(min_distance),
+                   xhash_max_distance:int(max_distance),
+                   xhash_matrix_shape:int(num_matrix),
+                    }
+        return diction
+
     # анализируем матрицу расстояний ключевых кадров
-    def analyze_distance_matrix(self, matrix_distance: np.ndarray, xhash: str):
+    def analyze_distance_matrix(self, matrix_distance: np.ndarray, xhash: str, hash_factor: float):
         # словарь для хранения пар похожих кадров
         similar_pairs = {}  
         
         if xhash=='marrihildreth':
-            threshold=int(self.hash_factor*self.hash_length_MH)  # длина 576
+            threshold=int(hash_factor*self.hash_length_MH)  # длина 576
         elif xhash=='blockhash':
-            threshold=int(self.hash_factor*self.hash_length_block)  # длина 968
+            threshold=int(hash_factor*self.hash_length_block)  # длина 968
         else:    
-            threshold=int(self.hash_factor*self.hash_length)  # длина 64
+            threshold=int(hash_factor*self.hash_length)  # длина 64
         
         # Проходим по всем элементам матрицы
         num_rows, num_cols = matrix_distance.shape
@@ -271,23 +230,9 @@ class VidCompar:
                 # Если расстояние меньше порога, добавляем в список похожих пар
                 if d < threshold:
                     similar_pairs[(i, j)]=(d, xhash, threshold)
-        
-        # общая статистика по матрице
-        # количество расстояний в матрице меньше пороговового значения
-        similar_distance = np.sum(matrix_distance < threshold)
-        # минимальное расстояние в матрице
-        min_distance = np.min(matrix_distance)
-        # максимальное расстояние в матрице
-        max_distance = np.max(matrix_distance)
-        print(f'\nМетод: [{xhash}]\n'
-              f'Количество похожих ключевых кадров: *[{similar_distance}]\n'
-              f'Порог расстояний между ключевыми кадрами:  {threshold}\n'
-              f'Минимальное значение в матрице: {min_distance}\n'
-              f'Максимальное значение в матрице: {max_distance}\n'
-              f'Размерность матрицы: {matrix_distance.shape}\n'
-              f'Общее количество элементов в матрице: {num_rows * num_cols}'
-            )
-        return similar_pairs # (i, j)=(d, xhash, threshold)
+        # общая статистика по матрице расстояний
+        diction = self.stat_distance_matrix(matrix_distance, xhash, threshold)
+        return similar_pairs, diction # ((i, j)=(d, xhash, threshold), diction)
 
     # список хэшей ключевых кадров
     def hashes_keyframes(self, keyframes_first: list, keyframes_second: list) ->List[Tuple]:
@@ -315,19 +260,21 @@ class VidCompar:
         return hashes_kframes # [([dhashes_first], [dhashes_second], xhashs)]
 
     # сравниваем хэши [(dhashes_first, dhashes_second, 'dhash')] 
-    def diff_hash(self, hashes_kframes: list)-> Dict[str, Dict[Tuple[int, int], Tuple[int, str]]]:
+    def diff_hash(self, hashes_kframes: list):
         xhash_similar_pairs={} # словарь для списков кортежей похожих кадров
+        dictions={} # словарь для статистики результатов анализа матрицы расстояний
         for hashes_first, hashes_second, xhash in hashes_kframes:
             # матрица расстояний между хэшами
             matrix_distance = self.safe_execute(self.matrix_distance_hashes(hashes_first, hashes_second, xhash), 'VidCompar diff_hash matrix_distance_hashes')
             # анализ матрицы расстояний между хэшами
             # словарь {(i, j)=(d, xhash, threshold)} схожих ключевых кадров
-            dict_similar_pairs = self.safe_execute(self.analyze_distance_matrix(matrix_distance, xhash), 'VidCompar diff_hash analyze_distance_matrix')
+            dict_similar_pairs, diction = self.safe_execute(self.analyze_distance_matrix(matrix_distance, xhash), 'VidCompar diff_hash analyze_distance_matrix')
+            dictions.update(diction)
             if isinstance(dict_similar_pairs, dict) and not dict_similar_pairs:
                 print(f'Метод [{xhash}] не определил ПОХОЖИХ КЛЮЧЕВЫХ КАДРОВ')
                 continue
             xhash_similar_pairs[xhash]=dict_similar_pairs
-        return xhash_similar_pairs # {xhash: {# (i, j)=(d, xhash, threshold)}}
+        return xhash_similar_pairs, dictions # {xhash: {# (i, j)=(d, xhash, threshold)}}, {diction for DB}
 
     # фильтруем словарь всех методов на уникальность 
     # {xhash: {(i, j)=(d, xhash, threshold)}}
@@ -347,6 +294,74 @@ class VidCompar:
         #       f'Количество отобранных схожих пар ключевых кадров: [{len(all_diction.items())}]')
         return all_diction # {(i, j)=(d, xhash, threshold)}
 
+    # делаем два списка ключевых кадров
+    async def get_kframes_two_path(self, path_first: str, path_second: str, threshold_kframes: float, date_msg: str, chat_id: str):
+        
+        #  первый список ключевых кадров
+        keyframes_first = self.Kf.get_keyframes(path_first, threshold_kframes)
+        
+        # ошибка при определении ключевых кадров первого видео
+        if keyframes_first is None:
+            print(f'\nERROR[VidCompar get_kframes_two_path] ERROR в первом видео при определении ключевых кадров')
+            # отметка в БД - ERROR
+            diction={'in_work':'ERROR', 'num_kframe_1':'ERROR', 'result_kframe':'ERROR'}
+            if not await self.Db.update_table_date_chatid(['diff'], date_msg, chat_id, diction):
+                print(f'\nERROR [VidCompar get_kframes_two_path] отметить в diff сравнение файлов не получилось\n')
+            return None
+        
+        # не определелили ключевые кадры в первом видео
+        elif isinstance(keyframes_first, list) and not keyframes_first:
+            print(f'\n[VidCompar get_kframes_two_path] нет ключевых кадров в первом видео')
+            # отметка в БД - not_kframe
+            # diction = {'in_work':'diff', 'num_kframe_1':str(0), 'num_kframe_2':'?', 'result_kframe':'not_kframe'}
+            diction = {'in_work':'diff', 'num_kframe_1':str(0), 'num_kframe_2':'?', 'result_kframe':'not_kframe', 'result_diff':'not_similar'}
+            if not await self.Db.update_table_date_chatid(['diff'], date_msg, chat_id, diction):
+                print(f'\nERROR [VidCompar get_kframes_two_path] отметить в diff сравнение файлов не получилось\n')
+            return []
+        
+        # есть ключевые кадры в первом видео
+        elif keyframes_first: 
+            print(f'\nПороговое значение определения ключевых кадров: [{threshold_kframes}]\n'                  
+                  f'В первом видео [{len(keyframes_first)}] ключевых кадров')
+            # отметка в БД
+            diction={'num_kframe_1':str(len(keyframes_first))}
+            if not await self.Db.update_table_date_chatid(['diff'], date_msg, chat_id, diction):
+                print(f'\nERROR [VidCompar get_kframes_two_path] отметить в diff сравнение файлов не получилось\n')
+        
+        #  второй список ключевых кадров
+        keyframes_second = self.Kf.get_keyframes(path_second, threshold_kframes)
+        # ошибка при определении ключевых кадров второго видео
+        if keyframes_second is None:
+            print(f'\nERROR[VidCompar get_kframes_two_path] ERROR во втором видео при определении ключевых кадров')
+            # отметка в БД - ERROR
+            diction={'in_work':'ERROR', 'num_kframe_2':'ERROR', 'result_kframe':'ERROR'}
+            if not await self.Db.update_table_date_chatid(['diff'], date_msg, chat_id, diction):
+                print(f'\nERROR [VidCompar get_kframes_two_path] отметить в diff сравнение файлов не получилось\n')
+                return None
+        # не определелили ключевые кадры во втором видео
+        elif isinstance(keyframes_second, list) and not keyframes_second:
+            print(f'\n[VidCompar get_kframes_two_path] нет ключевых кадров во втором видео')
+            # отметка в БД - not_kframe
+            diction = {'in_work':'diff', 'num_kframe_2':str(0), 'result_kframe':'not_kframe', 'result_diff':'not_similar'}
+            if not await self.Db.update_table_date_chatid(['diff'], date_msg, chat_id, diction):
+                print(f'\nERROR [VidCompar get_kframes_two_path] отметить в diff сравнение файлов не получилось\n')
+            return []
+        # определелили ключевые кадры во втором видео
+        elif keyframes_second:
+            print(f'\nПороговое значение определения ключевых кадров: [{threshold_kframes}]\n'                  
+                  f'Во втором видео [{len(keyframes_second)}] ключевых кадров')
+            # отметка в БД
+            diction={'num_kframe_2':str(len(keyframes_second)), 
+                     'result_kframe':str(len(keyframes_first)+len(keyframes_second)),
+                     }
+            if not await self.Db.update_table_date_chatid(['diff'], date_msg, chat_id, diction):
+                print(f'\nERROR [VidCompar get_kframes_two_path] отметить в diff сравнение файлов не получилось\n')
+        
+        return keyframes_first,keyframes_second 
+
+
+
+
     # создаем ключевые кадры, 
     # списки их хэшей, сравниваем хэши, 
     # анализируем матрицу расстояний Хэмминга 
@@ -354,57 +369,17 @@ class VidCompar:
         path_first = str(row.path_file_first)
         path_second = str(row.path_file_second)
         date_msg = str(row.date_message)
-        
-        #  первый список ключевых кадров
-        keyframes_first = self.get_keyframes(path_first)
-        if keyframes_first is None:
-            print(f'\nERROR[VidCompar diff_video] ERROR в первом видео при определении ключевых кадров')
-            # отметка в БД - ERROR
-            diction={'in_work':'ERROR', 'num_kframe_1':'ERROR', 'result_kframe':'ERROR'}
-            if not await self.Db.update_table_date_chatid(['diff'], date_msg, row.chat_id, diction):
-                print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
+        chat_id = str(row.chat_id)
+        threshold_kframes = float(row.threshold_kframes)
+
+        # делаем два списка ключевых кадров
+        kframes = await self.safe_await_execute(self.get_kframes_two_path(path_first, path_second, threshold_kframes, date_msg, chat_id), 'get_kframes_two_path')
+        if isinstance(kframes, list):
+            return []
+        elif not kframes:
             return None
-        elif isinstance(keyframes_first, list) and not keyframes_first:
-            print(f'\n[VidCompar diff_video] нет ключевых кадров в первом видео')
-            # отметка в БД - not_kframe
-            diction={'in_work':'diff', 'num_kframe_1':str(0), 'num_kframe_2':'?', 'result_kframe':'not_kframe'}
-            if not await self.Db.update_table_date_chatid(['diff'], date_msg, row.chat_id, diction):
-                print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
-            return []
-        elif keyframes_first:
-            print(f'\nПороговое значение определения ключевых кадров: [{self.threshold_keyframes}]\n'                  
-                  f'В первом видео [{len(keyframes_first)}] ключевых кадров')
-            # отметка в БД
-            diction={'num_kframe_1':str(len(keyframes_first))}
-            if not await self.Db.update_table_date_chatid(['diff'], date_msg, row.chat_id, diction):
-                print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
-        
-        #  второй список ключевых кадров
-        keyframes_second = self.get_keyframes(path_second)
-        if keyframes_second is None:
-            print(f'\nERROR[VidCompar diff_video] ERROR во втором видео при определении ключевых кадров')
-            # отметка в БД - ERROR
-            diction={'in_work':'ERROR', 'num_kframe_2':'ERROR', 'result_kframe':'ERROR'}
-            if not await self.Db.update_table_date_chatid(['diff'], date_msg, row.chat_id, diction):
-                print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
-                return None
-        elif isinstance(keyframes_second, list) and not keyframes_second:
-            print(f'\n[VidCompar diff_video] нет ключевых кадров во втором видео')
-            # отметка в БД - not_kframe
-            diction={'in_work':'diff', 'num_kframe_2':str(0), 'result_kframe':'not_kframe'}
-            if not await self.Db.update_table_date_chatid(['diff'], date_msg, row.chat_id, diction):
-                print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
-            return []
-        elif keyframes_second:
-            print(f'\nПороговое значение определения ключевых кадров: [{self.threshold_keyframes}]\n'                  
-                  f'Во втором видео [{len(keyframes_second)}] ключевых кадров')
-            # отметка в БД
-            diction={'num_kframe_2':str(len(keyframes_second)), 
-                     'result_kframe':str(len(keyframes_first)+len(keyframes_second)),
-                     'hash_factor':self.hash_factor,
-                     'threshold_kframes': self.threshold_keyframes}
-            if not await self.Db.update_table_date_chatid(['diff'], date_msg, row.chat_id, diction):
-                print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
+        elif isinstance(kframes, tuple):
+            keyframes_first, keyframes_second = kframes
 
         # список кортежей хэшей ключевых кадров 
         # [(dhashes_first, dhashes_second, 'dhash')]
@@ -414,12 +389,13 @@ class VidCompar:
             return None
             #
         # сравниваем и получаем пары похожих хэшей всех методов 
-        # {xhash: {# (i, j)=(d, xhash, threshold)}}
-        dict_similar_pairs = self.diff_hash(hashes_kframes)
+        # {xhash: {# (i, j)=(d, xhash, threshold)}}, {diction for DB}
+        dict_similar_pairs, diction_stat_DB = self.diff_hash(hashes_kframes)
         if isinstance(dict_similar_pairs, dict) and not dict_similar_pairs:
             print(f'\n[VidCompar diff_video] ни один метод не определил ПОХОЖИЕ КЛЮЧЕВЫЕ КАДРЫ')
             # отметка в БД
-            diction={'in_work':'diff', 'result_diff':'not_similar'}
+            diction={'in_work':'diff', 'result_diff':'not_similar', 'num_similar_pair':'not_similar'}
+            diction.update(diction_stat_DB) # добавляем статистику анализа в БД
             if not await self.Db.update_table_date_chatid(['diff'], date_msg, row.chat_id, diction):
                 print(f'\nERROR [VidCompar diff_video] отметить в diff сравнение файлов не получилось\n')
             return set()
@@ -445,80 +421,75 @@ class VidCompar:
         name_1 = str('id'+str(index)+'_'+xhash+'_d'+str(int(d))+'_'+str(threshold)+'_1.png')
         name_2 = str('id'+str(index)+'_'+xhash+'_d'+str(int(d))+'_'+str(threshold)+'_2.png')
         # name_2 = str('id'+str(index)+'_'+xhash+'_d'+str(int(d))+'_2.png')
-        full_name_file_1 = os.path.join(path2file, name_1) 
-        full_name_file_2 = os.path.join(path2file, name_2) 
+        full_name_file_1 = join(path2file, name_1) 
+        full_name_file_2 = join(path2file, name_2) 
         # сохранение в формате PNG
         image_pil_1 = Image.fromarray(np.uint8(frame_1), 'RGB')
         image_pil_2 = Image.fromarray(np.uint8(frame_2), 'RGB')
         self.safe_execute(image_pil_1.save(full_name_file_1), 'comparator_files')
         self.safe_execute(image_pil_2.save(full_name_file_2), 'comparator_files')
         return full_name_file_1, full_name_file_2
+    
+    # удаляем лого с переданных на сравнение видеофайлов
+    def delete_logo(self, paths: list[str], logo_size: int, corner: str):
+        new_paths = [self.safe_execute(self.Dl.del_logo(path, logo_size, corner), 'self.Dl.del_logo') for path in paths]
+        if not new_paths:
+                print(f'\nERROR[VidCompar delete_logo] ERROR лого не удалили c таких файлов: {paths}')
+                return None
+        return new_paths
 
-    # точка входа сравнения файлов
-    # <class 'sqlalchemy.engine.row.Row'> 
+
+    #### точка входа сравнения файлов
+    #### <class 'sqlalchemy.engine.row.Row'> 
     async def compar_vid_hash(self, row: Row):
         date=str(row.date_message)
         path_first=str(row.path_file_first)
         path_second=str(row.path_file_second)
-        
-        # удаляем лого если self.withoutlogo=True
-        if self.withoutlogo:
-            path_first = self.del_logo(path_first)
-            if not path_first:
-                print(f'\n[VidCompar compar_vid_hash] лого не удалили c первого видео')
-                return None
-            path_second = self.del_logo(path_second)
-            if not path_second:
-                print(f'\n[VidCompar compar_vid_hash] лого не удалили со второго видео')
-                return None
+        # удаляем лого если withoutlogo=yes
+        if str(row.withoutlogo)=='yes':
+            path_first, path_second = self.safe_execute(self.delete_logo([path_first, path_second]), 'delete_logo')
         else: print(f'\n[VidCompar compar_vid_hash] Лого не будем удалять\n')
         
-        ## основной метод сравнения видео
+        ### основной метод сравнения видео
         # # [(frame, frame, d, xhash, threshold)]
-        similar_frames = await self.diff_video(row)
+        similar_frames = await self.safe_await_execute(self.diff_video(row), 'diff_video')
         #
+        # ошибка в процессе выполнения
+        if similar_frames is None:
+            print(f'\nERROR[VidCompar compar_vid_hash] ERROR при определении ключевых кадров и сравнении видео')
+            return None
+        
         # нет схожих кадров
-        if isinstance(similar_frames, set) and not similar_frames:
+        elif isinstance(similar_frames, set) and not similar_frames:
             print(f'\n[VidCompar compar_vid_hash] ПОХОЖИХ КЛЮЧЕВЫХ КАДРОВ НЕТ')
-            diction = {'in_work':'diff', 'result_diff':'not_similar', 'num_similar_pair':'not_similar'}
-            if not await self.Db.update_table_date_chatid(['diff'], date, row.chat_id, diction):
-                print(f'\nERROR [VidCompar compar_vid_hash] отметить в таблице сравнение файлов \n{path_first} \n'
-                      f'{path_second} не получилось')
             return set()
         
         # нет ключевых кадров
         elif isinstance(similar_frames, list) and not similar_frames:
             print(f'\n[VidCompar compar_vid_hash] нет ключевых кадров в первом или втором видео')
-            diction = {'in_work':'diff', 'result_kframe':'not_kframe', 'result_diff':'not_similar'}
-            if not await self.Db.update_table_date_chatid(['diff'], date, row.chat_id, diction):
-                print(f'\nERROR [VidCompar compar_vid_hash] отметить в таблице сравнение файлов \n{path_first} \n'
-                      f'{path_second} не получилось')
             return []
         
-        # ошибка в процессе выполнения
-        elif similar_frames is None:
-            print(f'\nERROR[VidCompar compar_vid_hash] ERROR при определении ключевых кадров и сравнении видео')
-            return None
-        
-        # отмечаем в таблице diff факт сравнения видео
-        print(f'\n[VidCompar compar_vid_hash] \n'
-              f'Количество отобранных схожих пар ключевых кадров: [{len(similar_frames)}]')
-        diction = {'in_work':'diff', 'result_diff':'similar', 'num_similar_pair': str(len(similar_frames))}
-        if not await self.Db.update_table_date_chatid(['diff'], date, row.chat_id, diction):
-            print(f'\nERROR [VidCompar compar_vid_hash] отметить в таблице сравнение файлов \n{path_first} \n'
-                    f'{path_second} не получилось')
         
         # сохраняем на диск похожие ключевые кадры
         # # [(frame, frame, d, xhash, threshold)]
-        path2file = os.path.join(self.path_save_keyframe, date.replace(' ', '_').replace(':', '_'))
-        self._create_save_directory(path2file)
+        path2file = join(self.path_save_keyframe, date.replace(' ', '_').replace(':', '_'))
+        self.create_directory([path2file])
         for index, similar_frame in enumerate(similar_frames):
             path_saving=self.save_similar_frames(path2file, index, *similar_frame)
             if not path_saving:
                 print(f'\nERROR [VidCompar compar_vid_hash] записать на диск схожие кадры не получилось')
                 return None
-        # отмечаем в таблице diff факт записи видео
-        diction = {'save_sim_img':'saved', 'path_sim_img':path2file}
+        
+        print(f'\n[VidCompar compar_vid_hash] \n'
+              f'Количество отобранных схожих пар ключевых кадров: [{len(similar_frames)}]')
+        # отмечаем в таблице diff факт сравнения и записи ключевых кадров на диск
+        diction = {
+                   'in_work':'diff', 
+                   'result_diff':'similar', 
+                   'num_similar_pair': str(len(similar_frames)),
+                   'save_sim_img':'saved', 
+                   'path_sim_img':path2file,
+                   }
         if not await self.Db.update_table_date_chatid(['diff'], date, row.chat_id, diction):
             print(f'\nERROR [VidCompar compar_vid_hash] отметить в таблице сравнение файлов \n{path_first} \n'
                     f'{path_second} не получилось')

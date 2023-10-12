@@ -13,11 +13,16 @@
 # TELEGRAM_API_ID - API_ID that the user receives in core.telegram. Read more at: https://core.telegram.org/api/obtaining_api_id
 
 # TELEGRAM_API_HASH - API_HASH that the user receives in core.telegram. Read more at: https://core.telegram.org/api/obtaining_api_id
-
-# At the first run within bot_sender.py (from pyrogram import Client) it is necessary to pass identification by phone number to use API_ID and API_HASH
-
-# TELEGRAM_GROUP - '-100XXX' ID of a new group, where there is only you and a telegram bot, which is assigned to the role of group administrator and necessarily has the rights to delete messages and see messages in the group. This group is necessary for the final video to be sent there, and the bot sends it to the end user who ordered the video fragment. The bot deletes the forwarded message from the group.
-# It is necessary to send several third-party messages to this group so that there is at least a little bit of activity there.
 #
+# adding command line arguments
+# '-v', '--folder_video', type=str, help='Video folder'
+# '-k', '--folder_kframes', type=str, help='Folder for similar frames'
+# '-f', '--log_file', type=str, help='Logging log name'
+# '-l', '--log_level', type=str, help='Logging Level'
+# '-m', '--hash_factor', type=float, help='Threshold multiplier'
+# '-t', '--threshold_keyframes', type=float, help='Keyframes threshold'
+# '-z', '--logo_size', type=int, help='Side of square to remove logo'
+# '--withoutlogo', action='store_true', help='Remove logo'
 #
-
+# Example of use:
+# example@example:~$ start_hasher.py --hash_factor 0.2 --threshold_keyframes 0.2
