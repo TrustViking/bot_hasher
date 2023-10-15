@@ -9,6 +9,9 @@
     "folder_video" : "diff_video",
     "folder_kframes" : "diff_kframes",
 
+    "folder_pyrogram_session" : "pyrogram_session",
+    "name_pyrogram_session" : "F16",
+
     "pause_minut_hasher" : 1,
 
     "size_limit_video" : 524288000

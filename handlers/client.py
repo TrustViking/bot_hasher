@@ -12,16 +12,19 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.types.message import Message
 from aiogram.types.callback_query import CallbackQuery
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart, ExceptionTypeFilter, Command, CommandObject
 from aiogram.types import ReplyKeyboardRemove
-
+from aiogram.types.error_event import ErrorEvent
+from aiogram.exceptions import AiogramError
 #
 from bot_env.bot_init import LogInitializer, BotInitializer, ConfigInitializer
-from bot_env.decorators import safe_await_execute, safe_execute
+from bot_env.decorators import safe_await_aiogram_exe, safe_await_execute, safe_execute
 from bot_env.mod_log import Logger
 from data_base.table_db import DiffTable
 from data_base.base_db import MethodDB
 from keyboards.client_kb import KeyBoardClient
+from .diction_db import DictionDB 
+from .process_video import ProcessVideo 
 
 # класс машины состояний
 class Form(StatesGroup):
@@ -34,6 +37,7 @@ class Form(StatesGroup):
     number_corner = State()
     logo_size = State()
 
+
 class HandlersBot(ConfigInitializer):
     """
     Создаем для telegram-bot хэндлеры клиента:
@@ -42,15 +46,21 @@ class HandlersBot(ConfigInitializer):
     - logger: Logger
     """
     countInstance=0
+    router = Router()
+    name_data_hash_factor = [str(i / 10) for i in range(1, 10)]
+    name_data_threshold_keyframes = [str(i / 10) for i in range(1, 6)]
+    data_withoutlogo = ['yes', 'no']
+    name_data_number_corner = ['1', '2', '4', '3']
+    name_data_logo_size = [str(i) for i in range(100, 310, 10)]
+
     #
     def __init__(self, 
                 config_path: str,
                 logger: Logger,
                 bot: Bot, 
                 dp: Dispatcher,
-                router:  Router,
+                # router:  Router,
                 method_db: MethodDB,
-
                     ): 
 
         HandlersBot.countInstance+=1
@@ -63,29 +73,65 @@ class HandlersBot(ConfigInitializer):
         self.config = self.read_config(config_path)
         self.folder_video = self.config.get('folder_video') 
         self.folder_kframes = self.config.get('folder_kframes') 
+        self.folder_pyrogram_session = self.config.get('folder_pyrogram_session') 
+        self.name_pyrogram_session = self.config.get('name_pyrogram_session') 
         self.size_limit = self.config.get('size_limit_video') # 500Mb
         # Logger
         self.logger = logger
         # Bot, Dispatcher, Router
         self.bot = bot
         self.dp = dp
-        self.router = router
+        # self.router = router
         # MethodDB
         self.method_db=method_db
+        # DictionDB
+        self.dictionDB = DictionDB(self.logger)
+        # ProcessVideo
+        self.video = ProcessVideo(self.logger)
         #
-        # KeyBoardClient
-        self.kb = KeyBoardClient(self.logger)
-        # self.value_callback = [v for k, v in self.kb.name_button.items()]
+        self.path_save_vid=join(path[0], self.folder_video)
+        self.path_save_keyframe=join(path[0], self.folder_kframes)
+        self.path_pyrogram_session=join(path[0], self.folder_pyrogram_session)
+        self.create_directory([self.path_save_vid, self.path_save_keyframe, self.path_pyrogram_session])
         #
         # api pyrogram
         self.api_id = getenv('TELEGRAM_API_ID')
         self.api_hash = getenv('TELEGRAM_API_HASH')
-        # словарь - данные строки таблицы
+        self.client = Client(name=self.name_pyrogram_session, api_id=self.api_id, api_hash=self.api_hash, workdir=self.path_pyrogram_session, takeout=True, max_concurrent_transmissions=3)
+        # словарь - строка таблицы
         self.diction={}
         #
-        self.path_save_vid=join(path[0], self.folder_video)
-        self.path_save_keyframe=join(path[0], self.folder_kframes)
-        self.create_directory([self.path_save_vid, self.path_save_keyframe])
+        # KeyBoardClient
+        self.kb = KeyBoardClient(self.logger)
+        self.start_button = self.kb.start_button()
+        #
+        # создаем клавиатуру hash_factor от 0.1 до 0.9
+        self.name_data_hash_factor = [str(i / 10) for i in range(1, 10)]
+        self.column_hash_factor = 4 # количество колонок кнопок
+        self.kb_hash_factor = self.kb.inline_kb(self.column_hash_factor, self.name_data_hash_factor, self.name_data_hash_factor)
+        #
+        # создаем клавиатуру threshold_keyframes от 0.1 до 0.5
+        self.name_data_threshold_keyframes = [str(i / 10) for i in range(1, 6)]
+        self.column_threshold_keyframes = 4 # количество колонок кнопок
+        self.kb_threshold_keyframes = self.kb.inline_kb(self.column_threshold_keyframes, self.name_data_threshold_keyframes, self.name_data_threshold_keyframes)
+        #
+        # создаем клавиатуру withoutlogo 
+        self.name_withoutlogo = ['Убираем лого', 'Оставляем лого']
+        self.data_withoutlogo = ['yes', 'no']
+        self.column_withoutlogo = 2 # количество колонок кнопок
+        self.kb_withoutlogo = self.kb.inline_kb(self.column_withoutlogo, self.name_withoutlogo, self.data_withoutlogo)
+        #
+        # создаем клавиатуру number_corner 
+        self.name_data_number_corner = ['1', '2', '4', '3']
+        self.column_number_corner = 4 # количество колонок кнопок
+        self.kb_number_corner = self.kb.inline_kb(self.column_number_corner, self.name_data_number_corner, self.name_data_number_corner)
+        #
+        # создаем клавиатуру logo_size 
+        self.name_data_logo_size = [str(i) for i in range(100, 310, 10)]
+        self.column_logo_size = 9 # количество колонок кнопок
+        self.kb_logo_size = self.kb.inline_kb(self.column_logo_size, self.name_data_logo_size, self.name_data_logo_size)
+
+
         self._new_client()
         #
         #
@@ -111,6 +157,8 @@ class HandlersBot(ConfigInitializer):
             'router',
             'name_table',
             'method_db',
+            'diction_db',
+            'process_vid',
             'kb',
             'path_save_vid',
             'path_save_keyframe',
@@ -131,12 +179,14 @@ class HandlersBot(ConfigInitializer):
         print(f'\n[{__name__}|{self.cls_name}] Client# {self.countInstance}')
         self.logger.log_info(f'[_new_client] Client# {self.countInstance}')
 
+
     # New handlers
     def _new_handlers(self, name_handler=None):
         self.countHandlers+=1
         print(f'\n[{__name__}|{self.cls_name}] Handler {name_handler} # {self.countHandlers}')
         self.logger.log_info(f'[_new_handlers] Handler# {self.countHandlers}')
-    #
+    
+
     # создаем директорию, если такой папки нет
     def create_directory(self, paths: list[str]):
         """
@@ -144,306 +194,408 @@ class HandlersBot(ConfigInitializer):
         если она не существует
 
          Аргументы:
-        - paths: список строк, каждая из которых является путем к директории, которую необходимо создать.
+        - paths: список строк, каждая из которых является путем к директории, 
+                 которую необходимо создать.
         """
         _ = [makedirs(path,  exist_ok=True) for path in paths]
 
 
+    # записываем строку (словарь значений) в БД
+    async def save_data_bd(self, name_table: str, diction: list[dict], userid: str):
+        @safe_await_execute(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _save_data_bd():
+            args = (name_table, diction)
+            if not await self.method_db.insert_data(*args):
+                msg = (f'\nERROR [{__name__}|{self.cls_name}] ERROR не смогли записать данные в БД.\n')
+                res = await self.bot.send_message(userid, msg)
+                print(f'\n[{__name__}|{self.cls_name}] res: {res}')
+            # выводим таблицу 
+            await self.method_db.print_tables(name_table)
+            # очищаем строку-словарь БД
+            self.diction = {}
+            return args
+        return await  _save_data_bd()
+
+
+
+
     # обрабатывает команду пользователя - /start
+    @router.message(CommandStart(ignore_case=True))
     async def command_start(self, message: Message, state: FSMContext):
-        @safe_await_execute (logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
         async def _command_start():
+
+            #  тестовое сообщение и убираем предыдущую клавиатуру   
+            msg = (
+                    f'Будем сравнивать два видеофайла на уникальность \n'
+                    f'Пришлите в этот чат *первое*\ видео формата *[mp4]*\ \n'
+                    f'Размером не более *[500 Mб]*\  \n'
+                    f'Длительностью не более *[10 минут]*\ \n'
+                    )
+            await self.bot.send_message(message.from_user.id, 
+                                        msg, 
+                                        parse_mode='MarkdownV2',
+                                        reply_markup=ReplyKeyboardRemove(),
+                                        )  
+            
             # Устанавливаем пользователю состояние "ждем первое видео"
             await state.set_state(Form.first_video)
-            #  тестовое сообщение и убираем предыдущую клавиатуру   
-            await self.bot.send_message(message.from_user.id, text=f'Прислали: {message.content_type}\n', reply_markup=ReplyKeyboardRemove())
-
-            msg = (f'Будем сравнивать два видеофайла на уникальность \n'
-                f'Пришлите в этот чат *первое*\ видео формата *[mp4]*\ \n'
-                f'Размером не более *[500 Mб]*\  \n'
-                f'Длительностью не более *[10 минут]*\ \n')
-            await self.bot.send_message(message.from_user.id, msg, parse_mode='MarkdownV2')  
         return await _command_start()
 
-    # обработчик любого сообщения, кроме  - /start
-    async def any2start(self, message: Message, state: FSMContext):
-        @safe_await_execute (logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
-        async def _any2start():
-            await self.bot.send_message(message.from_user.id, text=f'Прислали: {message.content_type}\n')
-            msg = (f'Наберите команду [/start] для начала')
-            await self.bot.send_message(message.from_user.id, msg)
-            await state.finish()    
-        return await _any2start()
-
-    # Функция, которая будет вызываться для отображения прогресса
-    def progress_bar(self, current, total):
-        print(f"\rПрогресс скачивания: {current * 100 / total:.1f}%", end="", flush=True)
+    # обрабатывает команду - /cancel
+    @router.message(Command(["cancel"], ignore_case=True))
+    @router.message(F.text.lower() == "отмена")
+    async def cmd_cancel(message: Message, state: FSMContext):
+        await state.clear()
+        await message.answer(
+            text="Действие отменено",
+            reply_markup=ReplyKeyboardRemove()
+                                )
     
-    ## обработчик первого видео
+    ## обработчик Form.first_video
+    @router.message(Form.first_video, F.video)
     async def process_first_video(self, message: Message, state: FSMContext):
-        @safe_await_execute (logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
         async def _process_first_video():
             self._new_handlers('process_first_video')
-            #
-            file_id=str(message.video.file_id)
-            file_size=str(message.video.file_size)
-            number = int(file_size)
-            file_size_format = f"{number:,}".replace(",", " ")
-            mime = str(message.video.mime_type).split('/')[1]
-            print(f'\n[Handlers4bot process_first_video] \nfile_id: {file_id} \nfile_size: {file_size} \nmime: {mime}')
-            #
-            if  mime != 'mp4':
-                msg = (f'ERROR Вы ввели видео формата [{mime}] \n'
-                    f'Введите корректный формат видео - [mp4]. \n')
-                print(f'\n[Handlers4bot process_first_video] msg: {msg} \n')
-                await self.bot.send_message(message.from_user.id, msg)  
-            #
-            if  int(file_size) > self.size_limit:
-                msg = (f'ERROR Вы ввели видео размером: [{int(file_size)}] байт \n'
-                    f'Введите видео меньшего размера  \n')
-                print(f'\n[Handlers4bot process_first_video] msg: {msg} \n')
-                await self.bot.send_message(message.from_user.id, msg)  
-            #
-            msg = (f'Первое видео:\n'
-                f'width: {str(message.video.width)} px\n'
-                f'height: {str(message.video.height)} px\n'
-                f'duration: {str(message.video.duration)} sec\n'
-                f'file_size: {file_size_format} bytes\n'
-                f'mime_type: {mime}\n'
-                f'Начинаю скачивать видео...'
-                )
+            
+            # обработка видео (проверка типа и размера, скачивание 
+            # и информирование пользователя)
+            full_saving_path = await self.video.process_video(message, 
+                                                        'Первое', 
+                                                        self.bot, 
+                                                        self.client, 
+                                                        self.size_limit, 
+                                                        self.path_save_vid,
+                                                        )
+            if not full_saving_path:
+                return None
+            
+            # записываем данные первого видео в словарь-строку для БД
+            self.diction = {}
+            self.diction = self.dictionDB.diction_base_data_first(message, full_saving_path)
+
+            msg = (f'\nТеперь отправьте второе видео.\n')
             await self.bot.send_message(message.from_user.id, msg)
             
-            # первое видео
-            directory = join(self.path_save_vid, str(message.video.file_id) + '.mp4')
-            #
-            async with Client('F16', api_id=self.api_id, api_hash=self.api_hash, takeout=True) as app:
-                full_saving_path = await app.download_media(message.video, directory, progress=self.progress_bar)
-                # print(f'\n[Handlers4bot process_first_video] full_saving_path: {full_saving_path} \n')
-            await bot.send_message(message.chat.id, f"\nПервое видео скачано.\nСсылка: {full_saving_path}")  
-            # 
-            msg = (f'\nТеперь отправьте второе видео.\n')
-            await self.bot.send_message(message.from_user.id, msg)  
-            # формируем строку таблицы task 
-            self.diction={
-                'date_message' : str(message.date),
-                'chat_id' : str(message.chat.id),
-                'username' : str(message.from_user.username),
-                'video_id_first' : file_id,
-                'width_first': str(message.video.width),
-                'height_first': str(message.video.height),
-                'duration_first': str(message.video.duration),
-                'mime_type_first': mime,
-                'file_size_first': file_size,
-                'path_file_first': directory,
-                            }
             # Устанавливаем пользователю состояние "ждем второе видео"
-            await state.set_state(Form.second_video)    
+            await state.set_state(Form.second_video) 
+        return  await _process_first_video()  
 
-    ## обработчик второго видео
+
+    # обработчик некорректного ввода Form.first_video
+    @router.message(Form.first_video)
+    async def uncor_first_video(self, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _uncor_first_video():
+            self._new_handlers('uncor_first_video')
+            msg = (f'Прислали: {message.content_type}\n'
+                    f'Пришлите в этот чат *первое*\ видео формата *[mp4]*\ \n'
+                    f'Размером не более *[500 Mб]*\  \n'
+                    f'Длительностью не более *[10 минут]*\ \n'
+                    )
+            await message.answer(
+                    text=msg,
+                    parse_mode='MarkdownV2',
+                                    )
+        return  await _uncor_first_video()  
+
+
+    ## обработчик Form.second_video
+    @router.message(Form.second_video, F.video)
     async def process_second_video(self, message: Message, state: FSMContext):
-        self._new_handlers('process_first_video')
-        #
-        file_id=str(message.video.file_id)
-        file_size=str(message.video.file_size)
-        number = int(file_size)
-        file_size_format = f"{number:,}".replace(",", " ")
-        mime = str(message.video.mime_type).split('/')[1]
-        #
-        if  mime != 'mp4' or int(message.video.file_size)>self.size_limit:
-            msg = (f'ERROR Введите корректное видео исходя из вышеуказанных требований. \n'
-                  f'Вы ввели видео формата [{mime}] и размером: [{str(message.video.file_size)}] байт')
-            print(f'\n[Handlers4bot process_first_video] msg: {msg} \n')
-            await self.bot.send_message(message.from_user.id, msg)  
-        #
-        #
-        msg = (f'Второе видео:\n'
-               f'width: {str(message.video.width)} px\n'
-               f'height: {str(message.video.height)} px\n'
-               f'duration: {str(message.video.duration)} sec\n'
-               f'mime_type: {mime}\n'
-               f'file_size: {file_size_format} b\n'
-               f'Начинаю скачивать второе видео...'
-               )
-        await self.bot.send_message(message.from_user.id, msg)
-        
-        # второе видео
-        directory = join(self.path_save_vid, str(message.video.file_id) + '.mp4')
-        #
-        async with Client('F16', api_id=self.api_id, api_hash=self.api_hash) as app:
-            full_saving_path = await app.download_media(message.video, directory, progress=self.progress_bar)
-            # print(f'\n[Handlers4bot process_second_video] full_saving_path: {full_saving_path} \n')
-        # await bot.send_message(message.chat.id, f"\nВторое видео скачано.\nСсылка: {full_saving_path} \nРезультаты анализа пришлю сюда")  
-        msg = (f'\nВторое видео скачано.\nСсылка: {full_saving_path} \n'
-               f'\nВыберите значение порога схожести кадров от 0.1 до 0.9')
-        await bot.send_message(message.chat.id, msg, 
-                               reply_markup=self.kb.kb_hash_factor(5).as_markup(resize_keyboard=True))  
-        
-        # формируем вторую часть строки таблицы task
-        self.diction['time_task']=int(time())
-        self.diction['video_id_second']=file_id 
-        self.diction['width_second']=str(message.video.width) 
-        self.diction['height_second']=str(message.video.height) 
-        self.diction['duration_second']=str(message.video.duration) 
-        self.diction['mime_type_second']=mime 
-        self.diction['file_size_second']=file_size 
-        self.diction['path_file_second']=directory 
-        self.diction['dnld']='dnlded'
-        self.diction['in_work']='not_diff'
-        #
-        self.diction['num_kframe_1']='?_kframe'
-        self.diction['num_kframe_2']='?_kframe'
-        self.diction['result_kframe']='?_kframe'
-        self.diction['result_diff']='?_similar'
-        self.diction['num_similar_pair']='?_similar'
-        self.diction['save_sim_img']='not_save'
-        self.diction['path_sim_img']='not_path'
-        self.diction['sender_user']='not_sender'
-        # записываем словарь значений в таблицу task 
-        # await self.db.insert_data('diff', self.diction)
-        # # выводим таблицу task
-        # await self.db.print_data('diff')
-        # снимаем состояние 
-        # await state.finish()
-        # Устанавливаем пользователю состояние 'hash_factor'
-        await state.set_state(Form.hash_factor)    
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _process_second_video():
+            self._new_handlers('process_second_video')
+            
+            # обработка видео (проверка типа и размера, скачивание 
+            # и информирование пользователя)
+            full_saving_path = await self.video.process_video(message, 
+                                                        'Второе', 
+                                                        self.bot, 
+                                                        self.client, 
+                                                        self.size_limit, 
+                                                        self.path_save_vid,
+                                                        )
+            if not full_saving_path:
+                return None
+            
+            # формируем вторую часть словарь-строку таблицы БД
+            self.diction = self.dictionDB.diction_base_data_second(message, full_saving_path, self.diction)
 
-    ## обработчик hash_factor
-    async def process_hash_factor(self, callback: CallbackQuery, state: FSMContext):
-        #
-        data = callback.data
-        print(f'\n[Handlers4bot process_hash_factor] callback.data: {data}')
-        self.diction['hash_factor']=data
-        msg = (f'\nВыбрали значение порога схожести кадров [{data}]\n'
-               f'\nВыберите значение порога определения ключевых кадров')
-        await bot.send_message(callback.from_user.id, msg, 
-                        reply_markup=self.kb.kb_threshold_keyframes(5).as_markup())  
-
-        # Устанавливаем пользователю состояние 'hash_factor'
-        await state.set_state(Form.threshold_keyframes)    
-
-    ## обработчик threshold_keyframes
-    async def process_threshold_keyframes(self, callback: CallbackQuery, state: FSMContext):
-        #
-        data = callback.data
-        print(f'\n[Handlers4bot process_threshold_keyframes] callback.data: {data}')
-        self.diction['threshold_kframes']=data
-        msg = (f'\nВыбрали значение порога определения ключевых кадров [{data}]\n')
-        await bot.send_message(callback.from_user.id, msg, 
-                        reply_markup=self.kb.kb_withoutlogo(2).as_markup())  
-        
-        # Устанавливаем пользователю состояние 'withoutlogo'
-        await state.set_state(Form.withoutlogo)    
-
-    ## обработчик withoutlogo_yes
-    async def process_withoutlogo_yes(self, callback: CallbackQuery, state: FSMContext):
-        #
-        data = callback.data
-        print(f'\n[Handlers4bot process_withoutlogo_yes] callback.data: {data}')
-        self.diction['withoutlogo']=data
-        msg = (f'\nВыбрали удалять лого [{data}]\n')
-        await bot.send_message(callback.from_user.id, msg, 
-                        reply_markup=self.kb.kb_number_corner(4).as_markup())  
-        # Устанавливаем пользователю состояние 'number_corner'
-        await state.set_state(Form.number_corner)    
-   
-    ## обработчик withoutlogo_no
-    async def process_withoutlogo_no(self, callback: CallbackQuery, state: FSMContext):
-        #
-        data = callback.data
-        print(f'\n[Handlers4bot process_withoutlogo_no] callback.data: {data}')
-        self.diction['withoutlogo']=data
-        msg = (f'\nВыбрали не удалять лого [{data}]\n')
-        await bot.send_message(callback.from_user.id, msg)
-        #
-        # записываем строку (словарь значений) в БД
-        if not await self.db.insert_data('diff', self.diction):
-            msg = (f'\nERROR не смогли записать введенные данные в БД.\n'
-                   f'\nНадо ввести данные заново. \nВведите любой символ\n')
-            res = await bot.send_message(callback.from_user.id, msg)
-            print(res)
-        self.diction = {}
-        # выводим таблицу task
-        await self.db.print_tables('diff')
-        # снимаем состояние 
-        await state.finish()
+            # выводим клавиатуру hash_factor от 0.1 до 0.9
+            msg = (f'\nВторое видео скачано.\nСсылка: {full_saving_path} \n'
+                   f'\nВыберите значение порога схожести кадров от 0.1 до 0.9\n'
+                   f'В клавиатуре стоит resize_keyboard=True'
+                   )
+            await self.bot.send_message(message.chat.id, msg, 
+                                reply_markup=self.kb_hash_factor.as_markup(resize_keyboard=True))  
+            
+            # Устанавливаем пользователю состояние 'ждем hash_factor'
+            await state.set_state(Form.hash_factor)    
+        return  await _process_second_video()  
 
 
-    ## обработчик number_corner
-    async def process_number_corner(self, callback: CallbackQuery, state: FSMContext):
-        #
-        data = callback.data
-        print(f'\n[Handlers4bot process_number_corner] callback.data: {data}')
-        self.diction['number_corner']=data
-        msg = (f'\nВыбрали удалять лого в углу №{data}\n'
-               f'\nПришлите в чат размер маски удаления лого в пикселях (рекомендуется 180) не более 300')
-        await bot.send_message(callback.from_user.id, msg)
-        # Устанавливаем пользователю состояние 'logo_size'
-        await state.set_state(Form.logo_size)    
-
-    ## обработчик logo_size
-    async def process_logo_size(self, callback: CallbackQuery, state: FSMContext):
-        #
-        data = callback.data
-        try:
-            if 0<int(data)<300:
-                data = int(data)
-        except Exception as eR:
-            msg = (f'\nЭто не число от 0 до 300\n'
-                    f'\nВы ввели: {data} \n')
-        
-        print(f'\n[Handlers4bot process_logo_size] callback.data: {data}')
-        self.diction['logo_size']=data
-        msg = (f'\nРазмер маски удаления лого выбрали [{data}] пикселей\n'
-               f'\nРезультат работы пришлю сюда\n')
-        await bot.send_message(callback.from_user.id, msg)  
-        #
-        # записываем строку (словарь значений) в БД
-        if not await self.db.insert_data('diff', self.diction):
-            msg = (f'\nERROR не смогли записать введенные данные в БД.\n'
-                   f'\nНадо ввести данные заново. \nВведите любой символ\n')
-            res = await bot.send_message(callback.from_user.id, msg)
-            print(res)
-        self.diction = {}
-        # выводим таблицу task
-        await self.db.print_tables('diff')
-        # снимаем состояние 
-        await state.finish()
+    # обработчик некорректного ввода Form.second_video
+    @router.message(Form.second_video)
+    async def uncor_second_video(self, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _uncor_second_video():
+            self._new_handlers('uncor_second_video')
+            msg = (f'Прислали: {message.content_type}\n'
+                    f'Пришлите в этот чат *второе*\ видео формата *[mp4]*\ \n'
+                    f'Размером не более *[500 Mб]*\  \n'
+                    f'Длительностью не более *[10 минут]*\ \n'
+                    )
+            await message.answer(
+                    text=msg,
+                    parse_mode='MarkdownV2',
+                                    )
+        return  await _uncor_second_video()  
 
 
-    # регистрация хэндлеров
-    async def register_handlers_client(self):
-        # обрабатываем нажатие кнопки СТАРТ 
-        # self.dp.message.register(self.command_start, Command('start'))
-        self.dp.message.register(self.command_start, CommandStart(ignore_mention=True))
+    ## обработчик Form.hash_factor
+    @router.callback_query(Form.hash_factor, F.text.in_(name_data_hash_factor))
+    async def callback_hash_factor(self, callback: CallbackQuery, state: FSMContext):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _callback_hash_factor():
+            
+            # дополняем словарь-строку таблицы БД
+            data = callback.data
+            print(f'\n[{__name__}|{self.cls_name}] callback.data: {data}')
+            self.diction['hash_factor']=data
+            
+            # выводим клавиатуру threshold_keyframes от 0.1 до 0.5
+            msg = (f'\nВыбрали значение порога схожести кадров [{data}]\n'
+                   f'\nВыберите значение порога определения ключевых кадров\n'
+                   f'В клавиатуре не стоит resize_keyboard=True'
+                   )
+            await self.bot.send_message(callback.from_user.id, msg, 
+                            reply_markup=self.kb_threshold_keyframes.as_markup())  
 
-        # обрабатываем первое видео 
-        self.dp.message.register(self.process_first_video, F.video, state=Form.first_video)
-        
-        # обрабатываем второе видео 
-        self.dp.message.register(self.process_second_video, F.video, state=Form.second_video)
+            # Устанавливаем пользователю состояние 'ждем threshold_keyframes'
+            await state.set_state(Form.threshold_keyframes) 
+        return  await _callback_hash_factor()  
 
-        # обрабатываем hash_factor 
-        self.dp.callback_query.register(self.process_hash_factor, F.data.in_(self.value_callback), state=Form.hash_factor)
 
-        # обрабатываем threshold_keyframes 
-        self.dp.callback_query.register(self.process_threshold_keyframes, F.data.in_(self.value_callback), state=Form.hash_factor)
+    # обработчик некорректного ввода Form.hash_factor
+    @router.callback_query(Form.hash_factor)
+    async def uncor_hash_factor(self, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _uncor_hash_factor():
+            self._new_handlers('uncor_hash_factor')
+            msg = (f'Прислали: {message.content_type}\n'
+                    f'Нажмите кнопку на *клавиатуре*\ \n'
+                    f'Выберите значение *hash_factor*\ \n'
+                    )
+            await message.answer(
+                    text=msg,
+                    parse_mode='MarkdownV2',
+                                    )
+        return  await _uncor_hash_factor()  
 
-        # обрабатываем process_withoutlogo_yes 
-        self.dp.callback_query.register(self.process_withoutlogo_yes, F.data=='yes', state=Form.withoutlogo)
-        
-        # обрабатываем process_withoutlogo_no 
-        self.dp.callback_query.register(self.process_withoutlogo_no, F.data=='not', state=Form.withoutlogo)
 
-        # обрабатываем process_withoutlogo_s 
-        self.dp.callback_query.register(self.process_number_corner, F.data.in_(['1', '2', '3', '4']), state=Form.number_corner)
-        # обрабатываем process_withoutlogo_yes 
+    ## обработчик Form.threshold_keyframes
+    @router.callback_query(Form.threshold_keyframes, F.text.in_(name_data_threshold_keyframes))
+    async def callback_threshold_keyframes(self, callback: CallbackQuery, state: FSMContext):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _callback_threshold_keyframes():
+            
+            # дополняем словарь-строку таблицы БД
+            data = callback.data
+            print(f'\n[{__name__}|{self.cls_name}] callback.data: {data}')
+            self.diction['threshold_kframes']=data
+            
+            # выводим клавиатуру withoutlogo 'yes', 'no'
+            msg = (f'\nВыбрали значение порога определения ключевых кадров [{data}]\n')
+            await self.bot.send_message(callback.from_user.id, msg, 
+                            reply_markup=self.kb_withoutlogo.as_markup())  
+            
+            # Устанавливаем пользователю состояние 'withoutlogo'
+            await state.set_state(Form.withoutlogo)    
+        return  await _callback_threshold_keyframes()  
 
-        self.dp.callback_query.register(self.process_logo_size, F.data.content_type.text, state=Form.logo_size)
-        # обрабатываем process_withoutlogo_yes 
 
-        # любые сообщения и на старт
-        self.dp.message.register(self.any2start)
-        self.router.message.register(self.any2start, F.text)
+    # обработчик некорректного ввода Form.threshold_keyframes
+    @router.callback_query(Form.threshold_keyframes)
+    async def uncor_threshold_keyframes(self, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _uncor_threshold_keyframes():
+            self._new_handlers('uncor_threshold_keyframes')
+            msg = (f'Прислали: {message.content_type}\n'
+                    f'Нажмите кнопку на *клавиатуре*\ \n'
+                    f'Выберите значение *threshold_keyframes*\ \n'
+                    )
+            await message.answer(
+                    text=msg,
+                    parse_mode='MarkdownV2',
+                                    )
+        return  await _uncor_threshold_keyframes()  
+
+
+
+    ## обработчик Form.withoutlogo
+    @router.callback_query(Form.withoutlogo, F.text.in_(data_withoutlogo))
+    async def callback_withoutlogo(self, callback: CallbackQuery, state: FSMContext):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _callback_withoutlogo():
+            
+            # дополняем словарь-строку таблицы БД
+            data = callback.data
+            print(f'\n[{__name__}|{self.cls_name}] callback.data: {data}')
+            self.diction['withoutlogo']=data
+
+            if data=='yes':
+                msg = (f'\nВыбрали удалять лого [{data}]\n')
+                await self.bot.send_message(callback.from_user.id, msg, 
+                                reply_markup=self.kb_number_corner.as_markup())  
+                
+                # Устанавливаем пользователю состояние 'number_corner'
+                await state.set_state(Form.number_corner)  
+            
+            elif data=='no':
+                msg = (f'\nВыбрали не удалять лого [{data}]\n'
+                       f'\nБудем только сравнивать видео\n'
+                       f'\nРезультаты работы пришлю сюда... \n'
+                       )
+                await self.bot.send_message(callback.from_user.id, msg)
+                
+                # записываем строку (словарь значений) в БД
+                if not await self.save_data_bd('diff', [self.diction], callback.from_user.id):
+                    return None
+                # снимаем состояние 
+                await state.clear()
+        return  await _callback_withoutlogo()  
+
+
+    # обработчик некорректного ввода Form.withoutlogo
+    @router.callback_query(Form.withoutlogo)
+    async def uncor_withoutlogo(self, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _uncor_withoutlogo():
+            self._new_handlers('uncor_withoutlogo')
+            msg = (f'Прислали: {message.content_type}\n'
+                    f'Нажмите кнопку на *клавиатуре*\ \n'
+                    f'Выберите значение *withoutlogo*\ \n'
+                    )
+            await message.answer(
+                    text=msg,
+                    parse_mode='MarkdownV2',
+                                    )
+        return  await _uncor_withoutlogo()  
+
+
+    ## обработчик Form.number_corner
+    @router.callback_query(Form.number_corner, F.text.in_(name_data_number_corner))
+    async def callback_number_corner(self, callback: CallbackQuery, state: FSMContext):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _callback_number_corner():
+            
+            # дополняем словарь-строку таблицы БД
+            data = callback.data
+            print(f'\n[{__name__}|{self.cls_name}] callback.data: {data}')
+            self.diction['number_corner']=data
+            
+            msg = (f'\nВыбрали удалять лого в углу №{data}\n'
+                   f'\nПришлите в чат размер маски удаления лого в пикселях\n' 
+                   f'(рекомендуется 180px), но не менее 100 и не более 300 пикселей')
+            await self.bot.send_message(callback.from_user.id, msg, 
+                                        reply_markup=self.kb_logo_size.as_markup())
+            
+            # Устанавливаем пользователю состояние 'logo_size'
+            await state.set_state(Form.logo_size)
+        return  await _callback_number_corner()  
+
+
+    # обработчик некорректного ввода Form.number_corner
+    @router.callback_query(Form.number_corner)
+    async def uncor_number_corner(self, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _uncor_number_corner():
+            self._new_handlers('uncor_number_corner')
+            msg = (f'Прислали: {message.content_type}\n'
+                    f'Нажмите кнопку на *клавиатуре*\ \n'
+                    f'Выберите значение *number_corner*\ \n'
+                    )
+            await message.answer(
+                    text=msg,
+                    parse_mode='MarkdownV2',
+                                    )
+        return  await _uncor_number_corner()  
+
+
+    ## обработчик Form.logo_size
+    @router.callback_query(Form.logo_size, F.text.in_(name_data_logo_size))
+    async def callback_logo_size(self, callback: CallbackQuery, state: FSMContext):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _callback_logo_size():
+            
+            # дополняем словарь-строку таблицы БД
+            data = callback.data
+            print(f'\n[{__name__}|{self.cls_name}] callback.data: {data}')
+            self.diction['logo_size']=data
+            
+            msg = (f'\nРазмер маски удаления лого выбрали [{data}] пикселей\n'
+                   f'\nРезультат работы пришлю сюда...\n')
+            await self.bot.send_message(callback.from_user.id, msg, reply_markup=ReplyKeyboardRemove())  
+            
+            # записываем строку (словарь значений) в БД
+            if not await self.save_data_bd('diff', [self.diction], callback.from_user.id):
+                 return None
+            
+            # снимаем состояние 
+            await state.clear()
+        return  await _callback_logo_size()  
+
+
+    # обработчик некорректного ввода Form.number_corner
+    @router.callback_query(Form.logo_size)
+    async def uncor_logo_size(self, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _uncor_logo_size():
+            self._new_handlers('uncor_logo_size')
+            msg = (f'Прислали: {message.content_type}\n'
+                    f'Нажмите кнопку на *клавиатуре*\ \n'
+                    f'Выберите значение *logo_size*\ \n'
+                    )
+            await message.answer(text=msg, parse_mode='MarkdownV2')
+        return  await _uncor_logo_size()  
+
+
+    # Для исключений
+    @router.error(ExceptionTypeFilter(AiogramError), F.update.message.as_("message"))
+    async def handle_aiogram_error(self, event: ErrorEvent, message: Message):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _handle_aiogram_error():
+            msg = (f"Oops, something went wrong with aiogram! ERROR: {event.exception}")
+            await message.answer(msg)
+            print(msg)
+            self.logger.log_info(msg)
+        return  await _handle_aiogram_error()  
+
+
+    # Для всех остальных исключений
+    @router.error()  
+    async def error_handler(self, event: ErrorEvent):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _error_handler():
+            msg =  (f"ERROR: {event.exception}")
+            print(msg)
+            self.logger.log_info(msg)
+        return  await _error_handler()  
+
+
+    # обработчик любого сообщения
+    @router.message()  
+    async def any2start(self, message: Message, state: FSMContext):
+        @safe_await_aiogram_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        async def _any2start():
+            await self.bot.send_message(message.from_user.id, text=f'Прислали: {message.content_type}\n', reply_markup=ReplyKeyboardRemove())
+            msg = (
+                   f'Наберите команду [/start] для начала')
+            await self.bot.send_message(message.from_user.id, msg, reply_markup=self.start_button)
+            # очищаем все состояния FSMContext
+            await state.clear()    
+        return await _any2start()
 
 

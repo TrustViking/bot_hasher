@@ -21,8 +21,6 @@ class ConfigInitializer:
             if not isfile(config_path):
                 print(f'\nERROR [ConfigInitializer  _read_config] not exist config_path: {config_path}')
                 return None
-            # config_path = join(dirname(__file__), 'config.json')
-            # print(f'\n[ConfigInitializer  _read_config]  config_path: {config_path}')
             
             try:
                 with open(config_path, 'r') as f:
@@ -58,9 +56,8 @@ class BotInitializer(LogInitializer):
         self.logger = logger
         self.bot = None
         self.dp = None
-        self.router = None
+        # self.router = None
         super().__init__()
-        self.initialize_bot()
 
     def initialize_bot(self, config_path: str):
         @safe_execute(self.logger, name_method="InitializeBot")
@@ -72,6 +69,20 @@ class BotInitializer(LogInitializer):
             token = getenv('TELEGRAM_TOKEN_HASHER')
             self.bot = Bot(token)
             self.dp = Dispatcher(storage=MemoryStorage())
-            self.router = Router()
+            # self.router = Router() # будем получать из client.py
         return _initialize()
 
+    def get_bot(self) -> Bot:
+            if self.bot is None:
+                raise ValueError("Bot has not been initialized.")
+            return self.bot
+
+    def get_dp(self) -> Dispatcher:
+        if self.dp is None:
+            raise ValueError("Dispatcher has not been initialized.")
+        return self.dp
+
+    # def get_router(self) -> Router:
+    #     if self.router is None:
+    #         raise ValueError("Router has not been initialized.")
+    #     return self.router

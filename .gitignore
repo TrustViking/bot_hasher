@@ -1,5 +1,7 @@
 bot_hasher.code-workspace
+# файл или папка сессии pyrogram
 F16.session
+/pyrogram_session
 #
 # при запуске бота папка для логов, создастся автоматически
 /log_file 

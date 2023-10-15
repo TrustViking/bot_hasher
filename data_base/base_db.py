@@ -149,7 +149,7 @@ class MethodDB(ConfigInitializer):
                 print(f'\n[{self.cls_name}] {comment}: {full_path}')
 
 
-    # добавляем строку (словарь) в таблицу
+    # добавляем список строк (словарей) в таблицу
     async def insert_data(self, name_table: str, dictions: List[dict]):
         @safe_await_alchemy_exe(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
         # async def _insert_data (name_table: str, dictions: List[dict]):
@@ -321,4 +321,5 @@ class MethodDB(ConfigInitializer):
             print(f'\n*[print_data] в таблице [{name_table}] записано [{len(rows)}] строк:')
             for row in rows: 
                 print(f'\n{row}')
+        return await _print_tables()
 
