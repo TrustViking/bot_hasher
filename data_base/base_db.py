@@ -1,6 +1,6 @@
 
 
-from typing import List
+from typing import Union, Set, Tuple, List, Optional, Any, Dict
 from time import strftime
 from os.path import join, abspath, dirname, isfile
 from os import makedirs
@@ -8,6 +8,7 @@ from sys import platform, path
 from sqlalchemy import update, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.future import select
+from sqlalchemy.engine import Result
 #
 from bot_env.mod_log import Logger
 from data_base.table_db import DiffTable
@@ -163,7 +164,7 @@ class MethodDB(ConfigInitializer):
     
     
     # читаем все данные из таблицы исходя из одного условия 
-    async def read_data_one(self, name_table: str, column: str, params_status: str):
+    async def read_data_one(self, name_table: str, column: str, params_status: str) -> Result:
         @safe_await_alchemy_exe(self.logger, f'[{__name__}|{self.cls_name}]')
         async def _read_data_one():
             table=self.name_table.get(name_table)
@@ -178,7 +179,7 @@ class MethodDB(ConfigInitializer):
         return await _read_data_one()
     #
     # читаем все данные из таблицы исходя из двух условий 
-    async def read_data_two(self, name_table: str, one_column: str, one_params: str, two_column: str, two_params: str):
+    async def read_data_two(self, name_table: str, one_column: str, one_params: str, two_column: str, two_params: str) -> Optional[Result]:
         @safe_await_alchemy_exe(self.logger, f'[{__name__}|{self.cls_name}]')
         async def _read_data_two(): 
             table=self.name_table.get(name_table)
@@ -291,8 +292,9 @@ class MethodDB(ConfigInitializer):
             return list_res
         return await _update_table_resend()
 
+
     # получаем все данные таблицы
-    async def data_table(self, name_table: str):
+    async def data_table(self, name_table: str) -> Result:
         """
         Fetches all data from the specified table.
         
@@ -306,9 +308,10 @@ class MethodDB(ConfigInitializer):
                 async_results = await session.execute(select(table))
                 return async_results
         return await _data_table()
-    #
+    
+
     # Выводим все данные таблицы
-    async def print_tables(self, name_table: str):
+    async def print_tables(self, name_tables: List[str]):
         """
         Prints all the rows in the specified table.
         
@@ -316,10 +319,11 @@ class MethodDB(ConfigInitializer):
         """        
         @safe_await_alchemy_exe(self.logger, f'[{__name__}|{self.cls_name}]')
         async def _print_tables():
-            async_results = await self.data_table(name_table)
-            rows=async_results.fetchall()
-            print(f'\n*[print_data] в таблице [{name_table}] записано [{len(rows)}] строк:')
-            for row in rows: 
-                print(f'\n{row}')
+            for name_table in name_tables:
+                async_results = await self.data_table(name_table)
+                rows=async_results.fetchall()
+                print(f'\n[{__name__}|{self.cls_name}] в таблице [{name_table}] записано [{len(rows)}] строк:')
+                for row in rows: 
+                    print(f'\n{row}')
         return await _print_tables()
 

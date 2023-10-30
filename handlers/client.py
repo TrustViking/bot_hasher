@@ -17,7 +17,7 @@ from aiogram.types import ReplyKeyboardRemove
 from aiogram.types.error_event import ErrorEvent
 from aiogram.exceptions import AiogramError
 #
-from bot_env.bot_init import LogInitializer, BotInitializer, ConfigInitializer
+from bot_env.bot_init import ConfigInitializer
 from bot_env.decorators import safe_await_aiogram_exe, safe_await_execute, safe_execute
 from bot_env.mod_log import Logger
 from data_base.table_db import DiffTable
@@ -45,10 +45,20 @@ class HandlersBot(ConfigInitializer):
     Аргументы:
     - logger: Logger
     """
-    countInstance=0
+
+    # количество колонок кнопок
+    COLUMN_HASH_FACTOR = 4 
+    COLUMN_THRESHOLD_KFRAMES = 4
+    COLUMN_WITHOUTLOGO = 2
+    COLUMN_NUMBER_CORNER = 4
+    COLUMN_LOGO_SIZE = 9
+
+
+    countInstance = 0
     router = Router()
     name_data_hash_factor = [str(i / 10) for i in range(1, 10)]
     name_data_threshold_keyframes = [str(i / 10) for i in range(1, 6)]
+    name_withoutlogo = ['Убираем лого', 'НЕ убираем лого']
     data_withoutlogo = ['yes', 'no']
     name_data_number_corner = ['1', '2', '4', '3']
     name_data_logo_size = [str(i) for i in range(100, 310, 10)]
@@ -59,7 +69,6 @@ class HandlersBot(ConfigInitializer):
                 logger: Logger,
                 bot: Bot, 
                 dp: Dispatcher,
-                # router:  Router,
                 method_db: MethodDB,
                     ): 
 
@@ -67,7 +76,6 @@ class HandlersBot(ConfigInitializer):
         self.countInstance=HandlersBot.countInstance
         self.countHandlers=0
         self.cls_name = self.__class__.__name__
-        # self.abspath = dirname(abspath(__file__))
         #
         # config
         self.config = self.read_config(config_path)
@@ -106,31 +114,30 @@ class HandlersBot(ConfigInitializer):
         self.start_button = self.kb.start_button()
         #
         # создаем клавиатуру hash_factor от 0.1 до 0.9
-        self.name_data_hash_factor = [str(i / 10) for i in range(1, 10)]
-        self.column_hash_factor = 4 # количество колонок кнопок
-        self.kb_hash_factor = self.kb.inline_kb(self.column_hash_factor, self.name_data_hash_factor, self.name_data_hash_factor)
+        # self.name_data_hash_factor = [str(i / 10) for i in range(1, 10)]
+        # self.column_hash_factor = 4 # количество колонок кнопок
+        self.kb_hash_factor = self.kb.inline_kb(HandlersBot.COLUMN_HASH_FACTOR, HandlersBot.name_data_hash_factor, repit=True)
         #
         # создаем клавиатуру threshold_keyframes от 0.1 до 0.5
-        self.name_data_threshold_keyframes = [str(i / 10) for i in range(1, 6)]
-        self.column_threshold_keyframes = 4 # количество колонок кнопок
-        self.kb_threshold_keyframes = self.kb.inline_kb(self.column_threshold_keyframes, self.name_data_threshold_keyframes, self.name_data_threshold_keyframes)
+        # self.name_data_threshold_keyframes = [str(i / 10) for i in range(1, 6)]
+        # self.column_threshold_keyframes = 4 # количество колонок кнопок
+        self.kb_threshold_keyframes = self.kb.inline_kb(HandlersBot.COLUMN_THRESHOLD_KFRAMES, HandlersBot.name_data_threshold_keyframes, repit=True)
         #
         # создаем клавиатуру withoutlogo 
-        self.name_withoutlogo = ['Убираем лого', 'Оставляем лого']
-        self.data_withoutlogo = ['yes', 'no']
-        self.column_withoutlogo = 2 # количество колонок кнопок
-        self.kb_withoutlogo = self.kb.inline_kb(self.column_withoutlogo, self.name_withoutlogo, self.data_withoutlogo)
+        # self.name_withoutlogo = ['Убираем лого', 'Оставляем лого']
+        # self.data_withoutlogo = ['yes', 'no']
+        # self.column_withoutlogo = 2 # количество колонок кнопок
+        self.kb_withoutlogo = self.kb.inline_kb(HandlersBot.COLUMN_WITHOUTLOGO, HandlersBot.name_withoutlogo, HandlersBot.data_withoutlogo)
         #
         # создаем клавиатуру number_corner 
-        self.name_data_number_corner = ['1', '2', '4', '3']
-        self.column_number_corner = 4 # количество колонок кнопок
-        self.kb_number_corner = self.kb.inline_kb(self.column_number_corner, self.name_data_number_corner, self.name_data_number_corner)
+        # self.name_data_number_corner = ['1', '2', '4', '3']
+        # self.column_number_corner = 4 # количество колонок кнопок
+        self.kb_number_corner = self.kb.inline_kb(HandlersBot.COLUMN_NUMBER_CORNER, HandlersBot.name_data_number_corner, repit=True)
         #
         # создаем клавиатуру logo_size 
-        self.name_data_logo_size = [str(i) for i in range(100, 310, 10)]
-        self.column_logo_size = 9 # количество колонок кнопок
-        self.kb_logo_size = self.kb.inline_kb(self.column_logo_size, self.name_data_logo_size, self.name_data_logo_size)
-
+        # self.name_data_logo_size = [str(i) for i in range(100, 310, 10)]
+        # self.column_logo_size = 9 # количество колонок кнопок
+        self.kb_logo_size = self.kb.inline_kb(HandlersBot.COLUMN_LOGO_SIZE, HandlersBot.name_data_logo_size, repit=True)
 
         self._new_client()
         #
@@ -187,17 +194,18 @@ class HandlersBot(ConfigInitializer):
         self.logger.log_info(f'[_new_handlers] Handler# {self.countHandlers}')
     
 
-    # создаем директорию, если такой папки нет
     def create_directory(self, paths: list[str]):
-        """
-        Создает директорию для хранения video и ключевых кадров, 
-        если она не существует
+        @safe_execute(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        def  _create_directory():
+            """
+            Создает директорию, если она не существует
 
-         Аргументы:
-        - paths: список строк, каждая из которых является путем к директории, 
-                 которую необходимо создать.
-        """
-        _ = [makedirs(path,  exist_ok=True) for path in paths]
+            Аргументы:
+            - paths: список строк, каждая из которых является путем к директории, 
+            которую необходимо создать.
+            """
+            _ = [makedirs(path,  exist_ok=True) for path in paths]
+        return _create_directory()
 
 
     # записываем строку (словарь значений) в БД

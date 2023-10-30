@@ -88,17 +88,18 @@ class Telega(ConfigInitializer):
         self.logger.log_info(msg)
 
 #
-    # создаем директорию, если такой папки нет
     def create_directory(self, paths: list[str]):
-        """
-        Создает директорию для хранения video и ключевых кадров, 
-        если она не существует
+        @safe_execute(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
+        def  _create_directory():
+            """
+            Создает директорию, если она не существует
 
-         Аргументы:
-        - paths: список строк, каждая из которых является путем к директории, которую необходимо создать.
-        """
-        _ = [makedirs(path,  exist_ok=True) for path in paths]
-
+            Аргументы:
+            - paths: список строк, каждая из которых является путем к директории, 
+            которую необходимо создать.
+            """
+            _ = [makedirs(path,  exist_ok=True) for path in paths]
+        return _create_directory()
 
 
     # выводим состояние системы

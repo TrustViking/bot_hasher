@@ -54,14 +54,19 @@ class KeyBoardClient:
                         buttons: dict = None, 
                         name_buttons: list = None, 
                         data_buttons: list = None,
+                        repit: bool = False,
                         ):
         
         if isinstance(buttons, dict) and buttons:
             for key, value in buttons.items():
                 self.builder.add(InlineKeyboardButton(text=key, callback_data=value))
         
-        elif not buttons and name_buttons and data_buttons and len(name_buttons)==len(data_buttons):
+        elif not repit and not buttons and name_buttons and data_buttons and len(name_buttons)==len(data_buttons):
             for key, value in zip(name_buttons, data_buttons):
+                self.builder.add(InlineKeyboardButton(text=key, callback_data=value))
+        
+        elif repit and name_buttons and not data_buttons:
+            for key, value in zip(name_buttons, name_buttons):
                 self.builder.add(InlineKeyboardButton(text=key, callback_data=value))
         else: 
             print(f'\n[{__name__}|{self.cls_name}] conditions for keyboard creation are not met')

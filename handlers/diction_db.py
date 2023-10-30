@@ -81,6 +81,15 @@ class DictionDB():
                 diction['dnld']='dnlded'
                 diction['in_work']='not_diff'
                 #
+                diction['num_kframe_1']='0'
+                diction['num_kframe_2']='0'
+                diction['result_kframe']='0'
+                diction['hash_factor']=0.0
+                diction['threshold_kframes']=0.0
+                diction['withoutlogo']='0'
+                diction['number_corner']='0'
+                diction['logo_size']='0'
+
                 diction['num_kframe_1']='?_kframe'
                 diction['num_kframe_2']='?_kframe'
                 diction['result_kframe']='?_kframe'
