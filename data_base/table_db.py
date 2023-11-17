@@ -83,6 +83,6 @@ class DiffTable:
     # Объединение таблиц в словарь, где ключами будут имена таблиц, 
     # а значениями - соответствующие объекты Table
     tables = {
-        name_table: table,
+              name_table: table,
                 }
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3 
 #
-from typing import Coroutine, Callable, Any
-from typing import Union, Set, Tuple, List, Optional, Any, Dict
+from typing import Coroutine, Callable, Union, Set, Tuple, List, Optional, Any, Dict
 from time import sleep, strftime
 from datetime import datetime as dt
 from asyncio import run 

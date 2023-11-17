@@ -13,6 +13,7 @@
     "name_pyrogram_session" : "F16",
 
     "pause_minut_hasher" : 1,
+    "pause_minut_sender" : 2,
 
     "size_limit_video" : 524288000
 }

@@ -6,53 +6,52 @@ from os.path import basename, join, isfile, abspath, dirname
 from json import load, JSONDecodeError
 from aiogram import Bot, Dispatcher, Router
 from aiogram.fsm.storage.memory import MemoryStorage
-from .mod_log import Logger
+from .mod_log import LogBot
 from .decorators import safe_execute
 
 
 
 class ConfigInitializer:
-    def __init__(self, logger: Logger = None):
-        self.logger = logger if logger else Logger()
+    def __init__(self, logger: LogBot = None):
+        self.logger = logger if logger else LogBot()
 
     def read_config(self, config_path: str) -> Optional[Dict[str, Union[int, str]]]:
-        @safe_execute(self.logger, name_method="ReadConfig")
+        @safe_execute(self.logger, name_method="read_config")
         def _read_config(config_path: str):
             if not isfile(config_path):
-                print(f'\nERROR [ConfigInitializer  _read_config] not exist config_path: {config_path}')
+                print(f'\nERROR [ConfigInitializer  read_config] not exist config_path: {config_path}')
                 return None
             
             try:
                 with open(config_path, 'r') as f:
                     return load(f)
             except JSONDecodeError as e:
-                print(f"\nERROR[LogInitializer _read_config] Error decoding JSON config: {e}")
+                print(f"\nERROR [LogInitializer read_config] Error decoding JSON config: {e}")
                 return None
         return _read_config(config_path)
 
 
 class LogInitializer(ConfigInitializer):
     def __init__(self):
-        super().__init__(Logger())
-        # self.initialize()
+        super().__init__(LogBot())
 
-    def initialize(self, config_path: str):
+    def initialize(self, config_path: str)-> Optional[LogBot]:
         @safe_execute(self.logger, name_method="InitializeLogger")
         def _initialize():
             config = self.read_config(config_path)
             if config is None:
-                print("\n[LogInitializer _read_config] Failed to read configuration.")
+                print("\n[LogInitializer initialize] Failed to read configuration.")
                 return
             folder_logfile = config['folder_logfile']
             logfile = config['logfile']
             loglevel = config['loglevel']
-            self.logger = Logger(folder_logfile, logfile, loglevel)
+            self.logger = LogBot(folder_logfile, logfile, loglevel)
             return self.logger
         return _initialize()
 
 
 class BotInitializer(LogInitializer):
-    def __init__(self, logger: Logger):
+    def __init__(self, logger: LogBot):
         self.logger = logger
         self.bot = None
         self.dp = None

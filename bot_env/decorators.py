@@ -5,10 +5,10 @@ from aiogram.types.error_event import ErrorEvent
 from aiogram.exceptions import AiogramError
 from aiogram.filters import ExceptionTypeFilter
 #
-from bot_env.mod_log import Logger
+from bot_env.mod_log import LogBot
 
 # Асинхронный декоратор для безопасного выполнения методов
-def safe_await_execute(logger: Logger, name_method: str = None):
+def safe_await_execute(logger: LogBot, name_method: str = None):
     def decorator(coro_func: Callable[..., Coroutine[Any, Any, Any]]):
         @wraps(coro_func)
         async def wrapper(*args, **kwargs):
@@ -23,7 +23,7 @@ def safe_await_execute(logger: Logger, name_method: str = None):
 
 
 # Асинхронный декоратор для безопасного выполнения методов SQLAlchemy
-def safe_await_alchemy_exe(logger: Logger, name_method: str = None):
+def safe_await_alchemy_exe(logger: LogBot, name_method: str = None):
     def decorator(coro_func: Callable[..., Coroutine[Any, Any, Any]]):
         @wraps(coro_func)
         async def wrapper(*args, **kwargs):
@@ -38,7 +38,7 @@ def safe_await_alchemy_exe(logger: Logger, name_method: str = None):
 
 
 # Асинхронный декоратор для безопасного выполнения методов aiogram
-def safe_await_aiogram_exe(logger: Logger, name_method: str = None):
+def safe_await_aiogram_exe(logger: LogBot, name_method: str = None):
     def decorator(coro_func: Callable[..., Coroutine[Any, Any, Any]]):
         @wraps(coro_func)
         async def wrapper(*args, **kwargs):
@@ -52,9 +52,8 @@ def safe_await_aiogram_exe(logger: Logger, name_method: str = None):
     return decorator
 
 
-
 # Синхронный декоратор для безопасного выполнения методов
-def safe_execute(logger: Logger, name_method: str = None):
+def safe_execute(logger: LogBot, name_method: str = None):
     def decorator(func: Callable[..., Any]):
         @wraps(func)
         def wrapper(*args, **kwargs):
