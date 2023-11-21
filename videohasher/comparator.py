@@ -1,7 +1,7 @@
 
-from typing import Union, Set, Tuple, List, Optional, Any, Dict
+from typing import Union, Set, Tuple, List, Optional, Dict
 from time import strftime
-from os.path import isfile, join, abspath
+from os.path import isfile, join, abspath, dirname
 from os import makedirs, remove
 from sys import platform, path, argv
 
@@ -13,7 +13,7 @@ from sqlalchemy.engine.result import Row
 
 from bot_env.bot_init import ConfigInitializer
 from bot_env.decorators import safe_await_execute, safe_execute
-from bot_env.mod_log import Logger
+from bot_env.mod_log import LogBot
 from data_base.table_db import DiffTable
 from data_base.base_db import MethodDB
 from .delogo import Delogo 
@@ -29,32 +29,34 @@ class Comparison(ConfigInitializer):
     
     def __init__(self,
                 config_path: str,
-                logger: Logger,
+                logger: LogBot,
                 method_db: MethodDB, 
                  ):
+        super().__init__()
         Comparison.countInstance += 1
         self.countInstance = Comparison.countInstance
         self.cls_name = self.__class__.__name__
+        # Logger
+        self.logger = logger
+        # MethodDB
+        self.method_db = method_db
+        self.abspath = dirname(abspath(__file__))
+        self.entry_point = abspath(argv[0]) # точка входа самого первого скрипта
         # config
         self.config_path = config_path
         self.config = self.read_config(self.config_path)
         self.folder_video = self.config.get('folder_video') 
         self.folder_kframes = self.config.get('folder_kframes') 
-        self.entry_point = abspath(argv[0]) # точка входа самого первого скрипта
         self.path_save_keyframe = join(path[0], self.folder_kframes)
-        self.kwargs = {}
-        # Logger
-        self.logger = logger
-        # MethodDB
-        self.method_db = method_db
-        self.name_table = DiffTable.name_table
         # Delogo
         self.delogo = Delogo(self.logger)
         # Kframes
-        self.kframe = Kframes(self.logger)
+        self.kframe = Kframes(self.logger, self.method_db)
         # Hasher
         self.hasher = HasherKFrames(self.logger)
         #
+        self.name_table = DiffTable.name_table
+        self.kwargs = {}
         self._print()
 
     # выводим атрибуты объекта
@@ -68,16 +70,20 @@ class Comparison(ConfigInitializer):
 
         attributes_to_print = [
             'cls_name',
-            'config_path',
-            'methodDb',
-            'folder_video',
-            'folder_kframes',
             'logger',
             'method_db',
+            'abspath',
+            'entry_point',
+            'config_path',
+            'config',
+            'folder_video',
+            'folder_kframes',
+            'path_save_keyframe',
             'delogo',
             'kframe',
-            'entry_point',
-            'path_save_keyframe',
+            'hasher',
+            'kwargs',
+            'name_table',
 
         ]
 

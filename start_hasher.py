@@ -11,7 +11,7 @@ from asyncio import create_subprocess_shell, gather, run
 from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo, nvmlShutdown
 from psutil import virtual_memory
 #
-from bot_env.bot_init import LogInitializer, BotInitializer, ConfigInitializer
+from bot_env.bot_init import LogInitializer, ConfigInitializer
 from bot_env.decorators import safe_await_execute, safe_execute
 
 
@@ -20,6 +20,7 @@ class Start(ConfigInitializer):
     countInstance=0
     #
     def __init__(self):
+        super().__init__()
         Start.countInstance += 1
         self.countInstance = Start.countInstance
         self.cls_name = self.__class__.__name__

@@ -4,7 +4,7 @@ from asyncio import run
 from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo, nvmlShutdown
 from time import strftime
 from os import makedirs
-from os.path import basename, join, abspath, dirname, isfile
+from os.path import basename, join, abspath, dirname
 from sys import platform, argv
 from psutil import virtual_memory
 from sqlalchemy.engine.result import Row
@@ -22,7 +22,7 @@ class Telega(ConfigInitializer):
     countInstance=0
     #
     def __init__(self):
-
+        super().__init__()
         Telega.countInstance += 1
         self.countInstance = Telega.countInstance
         self.cls_name = self.__class__.__name__
@@ -33,9 +33,10 @@ class Telega(ConfigInitializer):
         # Logger
         self.log_init = LogInitializer()
         self.logger = self.log_init.initialize(self.config_path)
-        # Bot
+        # Bot init
         self.bot_init = BotInitializer(self.logger)
-        self.bot_init.initialize_bot(self.config_path)
+        self.bot_init.initialize_bot()
+        # Bot
         self.bot = self.bot_init.get_bot()
         # Dispatcher
         self.dp = self.bot_init.get_dp()
@@ -71,12 +72,12 @@ class Telega(ConfigInitializer):
             'bot_init',
             'bot',
             'dp',
-            'router',
-            'name_table',
+            # 'name_table',
             'methodDb',
             'folder_video',
             'folder_kframes',
             'client',
+            'router',
         ]
 
         for attr in attributes_to_print:

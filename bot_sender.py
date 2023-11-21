@@ -4,21 +4,21 @@
 from aiogram.types import InputFile, InputMediaPhoto
 # from argparse import ArgumentParser
 from asyncio import run 
-from logging import getLevelName
-from os.path import basename, join, abspath, dirname, getmtime, isdir
-from os import makedirs, listdir, remove, getmtime, join
+# from logging import getLevelName
+from os.path import basename, join, abspath, dirname
+from os import listdir
 from psutil import virtual_memory
 from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo, nvmlShutdown
 import sys
-from sys import platform, argv, path
+from sys import argv
 from sqlalchemy.engine.result import Row
 from time import sleep, strftime
-from typing import Coroutine, Callable, Any
+# from typing import Coroutine, Callable, Any
 from typing import Optional
 
 #
 # from bot_env.create_obj4bot import dp, bot
-from bot_env.mod_log import LogBot
+# from bot_env.mod_log import LogBot
 from data_base.table_db import DiffTable
 from bot_env.bot_init import LogInitializer, BotInitializer, ConfigInitializer
 from bot_env.decorators import safe_await_execute, safe_execute
@@ -31,6 +31,7 @@ class Sender(ConfigInitializer):
     countInstance=0
     #
     def __init__(self):
+        super().__init__()
         Sender.countInstance += 1
         self.countInstance = Sender.countInstance
 
@@ -51,7 +52,7 @@ class Sender(ConfigInitializer):
         self.methodDb=MethodDB(self.logger, self.config_path)
         # Bot
         self.bot_init = BotInitializer(self.logger)
-        self.bot_init.initialize_bot(self.config_path)
+        self.bot_init.initialize_bot()
         self.bot = self.bot_init.get_bot()
         self._print()
     
@@ -85,7 +86,6 @@ class Sender(ConfigInitializer):
 
         print(msg)
         self.logger.log_info(msg)
-#
 
 
     # выводим состояние системы
@@ -339,7 +339,7 @@ async def main():
         sleep (int(60*minut))
         
         print(f'\nСодержание таблиц в БД...')
-        await sender.methodDb.print_tables('diff')
+        await sender.methodDb.print_tables(['diff'])
         
         # сохраненные и не отправленные kframes
         rows_send = await sender.rows4send()

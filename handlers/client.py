@@ -1,26 +1,26 @@
 
 
-from typing import Coroutine
+# from typing import Coroutine
 from time import time, strftime
-from sys import platform, argv, path
+from sys import platform, path
 from os import getenv, makedirs
-from os.path import join, dirname, exists, basename, abspath, isfile
-from psutil import virtual_memory
+from os.path import join
+# from psutil import virtual_memory
 from pyrogram import Client
 from aiogram import Bot, Dispatcher, Router,  F
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.types.message import Message
 from aiogram.types.callback_query import CallbackQuery
-from aiogram.filters import CommandStart, ExceptionTypeFilter, Command, CommandObject
+from aiogram.filters import CommandStart, ExceptionTypeFilter, Command
 from aiogram.types import ReplyKeyboardRemove
 from aiogram.types.error_event import ErrorEvent
 from aiogram.exceptions import AiogramError
 #
 from bot_env.bot_init import ConfigInitializer
 from bot_env.decorators import safe_await_aiogram_exe, safe_await_execute, safe_execute
-from bot_env.mod_log import Logger
-from data_base.table_db import DiffTable
+from bot_env.mod_log import LogBot
+# from data_base.table_db import DiffTable
 from data_base.base_db import MethodDB
 from keyboards.client_kb import KeyBoardClient
 from .diction_db import DictionDB 
@@ -43,7 +43,7 @@ class HandlersBot(ConfigInitializer):
     Создаем для telegram-bot хэндлеры клиента:
 
     Аргументы:
-    - logger: Logger
+    - logger: LogBot
     """
 
     # количество колонок кнопок
@@ -66,19 +66,20 @@ class HandlersBot(ConfigInitializer):
     #
     def __init__(self, 
                 config_path: str,
-                logger: Logger,
+                logger: LogBot,
                 bot: Bot, 
                 dp: Dispatcher,
                 method_db: MethodDB,
                     ): 
-
+        super().__init__()
         HandlersBot.countInstance+=1
         self.countInstance=HandlersBot.countInstance
         self.countHandlers=0
         self.cls_name = self.__class__.__name__
         #
         # config
-        self.config = self.read_config(config_path)
+        self.config_path=config_path
+        self.config = self.read_config(self.config_path)
         self.folder_video = self.config.get('folder_video') 
         self.folder_kframes = self.config.get('folder_kframes') 
         self.folder_pyrogram_session = self.config.get('folder_pyrogram_session') 
@@ -86,10 +87,9 @@ class HandlersBot(ConfigInitializer):
         self.size_limit = self.config.get('size_limit_video') # 500Mb
         # Logger
         self.logger = logger
-        # Bot, Dispatcher, Router
+        # Bot, Dispatcher
         self.bot = bot
         self.dp = dp
-        # self.router = router
         # MethodDB
         self.method_db=method_db
         # DictionDB
@@ -106,40 +106,35 @@ class HandlersBot(ConfigInitializer):
         self.api_id = getenv('TELEGRAM_API_ID')
         self.api_hash = getenv('TELEGRAM_API_HASH')
         self.client = Client(name=self.name_pyrogram_session, api_id=self.api_id, api_hash=self.api_hash, workdir=self.path_pyrogram_session, takeout=True, max_concurrent_transmissions=3)
-        # словарь - строка таблицы
-        self.diction={}
         #
         # KeyBoardClient
-        self.kb = KeyBoardClient(self.logger)
-        self.start_button = self.kb.start_button()
+        self.kb_start = KeyBoardClient(self.logger)
+        self.start_button = self.kb_start.start_button()
         #
         # создаем клавиатуру hash_factor от 0.1 до 0.9
-        # self.name_data_hash_factor = [str(i / 10) for i in range(1, 10)]
-        # self.column_hash_factor = 4 # количество колонок кнопок
-        self.kb_hash_factor = self.kb.inline_kb(HandlersBot.COLUMN_HASH_FACTOR, HandlersBot.name_data_hash_factor, repit=True)
+        self.kb1 = KeyBoardClient(self.logger)
+        self.kb_hash_factor = self.kb1.inline_kb(column=HandlersBot.COLUMN_HASH_FACTOR, name_buttons=HandlersBot.name_data_hash_factor, repeat=True)
         #
         # создаем клавиатуру threshold_keyframes от 0.1 до 0.5
-        # self.name_data_threshold_keyframes = [str(i / 10) for i in range(1, 6)]
-        # self.column_threshold_keyframes = 4 # количество колонок кнопок
-        self.kb_threshold_keyframes = self.kb.inline_kb(HandlersBot.COLUMN_THRESHOLD_KFRAMES, HandlersBot.name_data_threshold_keyframes, repit=True)
+        self.kb2 = KeyBoardClient(self.logger)
+        self.kb_threshold_keyframes = self.kb2.inline_kb(column=HandlersBot.COLUMN_THRESHOLD_KFRAMES, name_buttons=HandlersBot.name_data_threshold_keyframes, repeat=True)
         #
-        # создаем клавиатуру withoutlogo 
-        # self.name_withoutlogo = ['Убираем лого', 'Оставляем лого']
-        # self.data_withoutlogo = ['yes', 'no']
-        # self.column_withoutlogo = 2 # количество колонок кнопок
-        self.kb_withoutlogo = self.kb.inline_kb(HandlersBot.COLUMN_WITHOUTLOGO, HandlersBot.name_withoutlogo, HandlersBot.data_withoutlogo)
+        # создаем клавиатуру withoutlogo
+        self.kb3 = KeyBoardClient(self.logger)
+        self.kb_withoutlogo = self.kb3.inline_kb(column=HandlersBot.COLUMN_WITHOUTLOGO, name_buttons=HandlersBot.name_withoutlogo, data_buttons=HandlersBot.data_withoutlogo)
         #
-        # создаем клавиатуру number_corner 
-        # self.name_data_number_corner = ['1', '2', '4', '3']
-        # self.column_number_corner = 4 # количество колонок кнопок
-        self.kb_number_corner = self.kb.inline_kb(HandlersBot.COLUMN_NUMBER_CORNER, HandlersBot.name_data_number_corner, repit=True)
+        # создаем клавиатуру number_corner
+        self.kb4 = KeyBoardClient(self.logger)
+        self.kb_number_corner = self.kb4.inline_kb(column=HandlersBot.COLUMN_NUMBER_CORNER, name_buttons=HandlersBot.name_data_number_corner, repeat=True)
         #
-        # создаем клавиатуру logo_size 
-        # self.name_data_logo_size = [str(i) for i in range(100, 310, 10)]
-        # self.column_logo_size = 9 # количество колонок кнопок
-        self.kb_logo_size = self.kb.inline_kb(HandlersBot.COLUMN_LOGO_SIZE, HandlersBot.name_data_logo_size, repit=True)
+        # создаем клавиатуру logo_size
+        self.kb5 = KeyBoardClient(self.logger)
+        self.kb_logo_size = self.kb5.inline_kb(column=HandlersBot.COLUMN_LOGO_SIZE, name_buttons=HandlersBot.name_data_logo_size, repeat=True)
 
+        # словарь - строка таблицы
+        self.diction={}
         self._new_client()
+        self._print()
         #
         #
     # выводим № объекта
@@ -153,22 +148,37 @@ class HandlersBot(ConfigInitializer):
 
         attributes_to_print = [
             'cls_name',
-            'abspath',
             'config_path',
+            'config',
             'folder_video',
             'folder_kframes',
+            'folder_pyrogram_session',
+            'name_pyrogram_session',
             'size_limit',
             'logger',
             'bot',
             'dp',
-            'router',
-            'name_table',
             'method_db',
-            'diction_db',
-            'process_vid',
-            'kb',
+            'dictionDB',
+            'video',
             'path_save_vid',
             'path_save_keyframe',
+            'path_pyrogram_session',
+            'api_id',
+            'api_hash',
+            'client',
+            'kb_start',
+            'start_button',
+            'kb1',
+            'kb_hash_factor',
+            'kb2',
+            'kb_threshold_keyframes',
+            'kb3',
+            'kb_withoutlogo',
+            'kb4',
+            'kb_number_corner',
+            'kb5',
+            'kb_logo_size',
 
         ]
 
@@ -225,8 +235,6 @@ class HandlersBot(ConfigInitializer):
         return await  _save_data_bd()
 
 
-
-
     # обрабатывает команду пользователя - /start
     @router.message(CommandStart(ignore_case=True))
     async def command_start(self, message: Message, state: FSMContext):
@@ -251,7 +259,7 @@ class HandlersBot(ConfigInitializer):
         return await _command_start()
 
     # обрабатывает команду - /cancel
-    @router.message(Command(["cancel"], ignore_case=True))
+    @router.message(Command("cancel", ignore_case=True))
     @router.message(F.text.lower() == "отмена")
     async def cmd_cancel(message: Message, state: FSMContext):
         await state.clear()
@@ -439,7 +447,6 @@ class HandlersBot(ConfigInitializer):
                     parse_mode='MarkdownV2',
                                     )
         return  await _uncor_threshold_keyframes()  
-
 
 
     ## обработчик Form.withoutlogo

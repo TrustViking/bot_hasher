@@ -2,13 +2,13 @@
 
 from time import strftime
 from sys import platform
-from os import getenv, makedirs
+from os import makedirs
 from os.path import join
 from pyrogram import Client
 from aiogram import Bot
 from aiogram.types.message import Message
 
-from bot_env.mod_log import Logger
+from bot_env.mod_log import LogBot
 from bot_env.decorators import safe_await_execute
 
 
@@ -18,12 +18,12 @@ class ProcessVideo():
     Скачивание с сервера telegram видео и его обработка:
 
     Аргументы:
-    - logger: Logger
+    - logger: LogBot
     """
     countInstance=0
     #
     def __init__(self, 
-                logger: Logger,
+                logger: LogBot,
                     ): 
 
         ProcessVideo.countInstance+=1
@@ -41,7 +41,19 @@ class ProcessVideo():
             f"\nStarted at {strftime('%X')}\n"
             f'[{__name__}|{self.cls_name}] countInstance: [{self.countInstance}]\n'
             f'platform: [{platform}]\n'
+            f'\nAttributes:\n'
             )
+
+        attributes_to_print = [
+            'cls_name',
+            'logger',
+            'diction',
+        ]
+
+        for attr in attributes_to_print:
+            # "Attribute not found" будет выведено, если атрибут не существует
+            value = getattr(self, attr, "Attribute not found")  
+            msg += f"{attr}: {value}\n"
 
         print(msg)
         self.logger.log_info(msg)

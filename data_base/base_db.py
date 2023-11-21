@@ -1,6 +1,6 @@
 
 
-from typing import Union, Set, Tuple, List, Optional, Any, Dict
+from typing import List, Optional
 from time import strftime
 from os.path import join, abspath, dirname, isfile
 from os import makedirs
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.future import select
 from sqlalchemy.engine import Result
 #
-from bot_env.mod_log import Logger
+from bot_env.mod_log import LogBot
 from data_base.table_db import DiffTable
 from bot_env.bot_init import ConfigInitializer
 from bot_env.decorators import safe_await_alchemy_exe
@@ -22,41 +22,41 @@ class MethodDB(ConfigInitializer):
     Создаем асинхронную базу данных:
 
     Аргументы:
-    - logger: Logger
+    - logger: LogBot
     - config_path: str
         
         # Методы: type: <class 'sqlalchemy.engine.cursor.CursorResult'>
-        # fetchone(): Возвращает следующую строку результата запроса.
-        # fetchall(): Возвращает все строки результата запроса.
-        # fetchmany(size=None): Возвращает заданное количество строк результата запроса (по умолчанию размер указан в параметрах курсора).
-        # keys(): Возвращает список имен столбцов результата.
-        # close(): Закрывает результат (курсор).
+        fetchone(): Возвращает следующую строку результата запроса.
+        fetchall(): Возвращает все строки результата запроса.
+        fetchmany(size=None): Возвращает заданное количество строк результата запроса (по умолчанию размер указан в параметрах курсора).
+        keys(): Возвращает список имен столбцов результата.
+        close(): Закрывает результат (курсор).
 
         # Атрибуты:
-        # rowcount: Возвращает количество строк, затронутых запросом.
-        # description: Список кортежей, представляющих описание столбцов результата. Каждый кортеж содержит информацию о столбце, такую как имя, тип и т.д.
-        # closed: Флаг, показывающий, закрыт ли результат.
+        rowcount: Возвращает количество строк, затронутых запросом.
+        description: Список кортежей, представляющих описание столбцов результата. Каждый кортеж содержит информацию о столбце, такую как имя, тип и т.д.
+        closed: Флаг, показывающий, закрыт ли результат.
         
         # Методы объектов <class 'sqlalchemy.engine.row.Row'>:
-        # items(): Возвращает пары ключ-значение для каждого столбца в строке.
-        # keys(): Возвращает имена столбцов в строке.
-        # values(): Возвращает значения столбцов в строке.
-        # get(key, default=None): Получение значения по имени столбца. Если столбец не существует, возвращается значение default.
-        # as_dict(): Возвращает строки в виде словаря, где ключи - это имена столбцов, а значения - значения столбцов.
-        # index(key): Возвращает позицию столбца с указанным именем в строке.
+        items(): Возвращает пары ключ-значение для каждого столбца в строке.
+        keys(): Возвращает имена столбцов в строке.
+        values(): Возвращает значения столбцов в строке.
+        get(key, default=None): Получение значения по имени столбца. Если столбец не существует, возвращается значение default.
+        as_dict(): Возвращает строки в виде словаря, где ключи - это имена столбцов, а значения - значения столбцов.
+        index(key): Возвращает позицию столбца с указанным именем в строке.
         
         # Атрибуты:
-        # keys(): Возвращает имена столбцов в строке.
-        # _fields: Атрибут, хранящий имена столбцов в строке.
-        # _data: Словарь, содержащий данные строки, где ключи - это имена столбцов, а значения - значения столбцов.
-
+        keys(): Возвращает имена столбцов в строке.
+        _fields: Атрибут, хранящий имена столбцов в строке.
+        _data: Словарь, содержащий данные строки, где ключи - это имена столбцов, а значения - значения столбцов.
     """
     countInstance=0
 
     def __init__(self,
-                 logger: Logger,
+                 logger: LogBot,
                  config_path: str,
                  ):
+        super().__init__()
         MethodDB.countInstance+=1
         self.countInstance=MethodDB.countInstance
         self.cls_name = self.__class__.__name__
@@ -67,13 +67,6 @@ class MethodDB(ConfigInitializer):
         # config
         self.config_path = config_path
         self.config = self.read_config(self.config_path)
-
-        
-        # Определение структуры таблицы 
-        self.metadata = DiffTable.metadata
-        
-        # Импорт параметров таблицы
-        self.name_table = DiffTable.tables
         
         # путь к директории БД
         self.path_db = join(self.sys_abspath, self.config.get('folder_db'))
@@ -92,6 +85,11 @@ class MethodDB(ConfigInitializer):
         # Создаем асинхронный объект Session 
         self.Session = async_sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
         
+        # Определение структуры таблицы 
+        self.metadata = DiffTable.metadata
+        
+        # Импорт параметров таблицы
+        self.name_table = DiffTable.tables
         self._print()
 #
 
@@ -108,9 +106,16 @@ class MethodDB(ConfigInitializer):
             'cls_name',
             'os_abspath',
             'sys_abspath',
+            'logger',
             'config_path',
-            'path_db'
-            'abspath_filedb'
+            'config',
+            # 'name_table',
+            'path_db',
+            'abspath_filedb',
+            'sqlalchemy_url',
+            'engine',
+            'Session',
+            'metadata',
         ]
 
         for attr in attributes_to_print:
@@ -139,15 +144,20 @@ class MethodDB(ConfigInitializer):
         Проверяем наличие файла в директории 
 
          Аргументы:
-        - paths: список строк, каждая из которых является полным путем к файлу, который необходимо проверить.
+        - paths: список строк, каждая из которых является полным путем к файлу, 
+                 который необходимо проверить.
         """
         notexist_paths = [full_path for full_path in full_paths if not isfile(full_path)]
+        # print(f'\n[{__name__}|{self.cls_name}] notexist_paths: {notexist_paths}')
         if notexist_paths:
             print(f'\n[{__name__}|{self.cls_name}] ERROR: Files do not exist at these paths: {notexist_paths}')
             raise FileNotFoundError(f'\n[{__name__}|{self.cls_name}] Files not found: {notexist_paths}')
         else: 
             for full_path in full_paths: 
-                print(f'\n[{self.cls_name}] {comment}: {full_path}')
+                if comment:
+                    print(f'\n[{__name__}|{self.cls_name}] {comment}: {full_path}')
+                else:
+                    print(f'\n[{__name__}|{self.cls_name}] FILE [{full_path}] EXIST')
 
 
     # добавляем список строк (словарей) в таблицу
@@ -177,7 +187,8 @@ class MethodDB(ConfigInitializer):
                                             order_by(table.c.id))
                 return result
         return await _read_data_one()
-    #
+    
+
     # читаем все данные из таблицы исходя из двух условий 
     async def read_data_two(self, name_table: str, one_column: str, one_params: str, two_column: str, two_params: str) -> Optional[Result]:
         @safe_await_alchemy_exe(self.logger, f'[{__name__}|{self.cls_name}]')
@@ -195,7 +206,8 @@ class MethodDB(ConfigInitializer):
                                     .order_by(table.c.id))   
                 return async_results
         return await _read_data_two()
-    #
+    
+
     # Находим в таблице 'dnld', 'task' строки с vid и записываем словарь значений
     async def update_table_vid(self, name_tables: list, vid: str, diction: dict):
         @safe_await_alchemy_exe(self.logger, f'[{__name__}|{self.cls_name}]')
@@ -213,6 +225,7 @@ class MethodDB(ConfigInitializer):
                     list_res.append(diction)
             return list_res
         return await _update_table_vid()
+
 
     # Находим в таблице строки с date_message и user_id
     # записываем словарь значений
@@ -233,6 +246,7 @@ class MethodDB(ConfigInitializer):
                     list_res.append(diction)
             return list_res
         return await _update_table_date_userid()
+
 
     # Находим в таблице строки с date_message и chat_id
     # записываем словарь значений
@@ -271,6 +285,7 @@ class MethodDB(ConfigInitializer):
                     await session.commit()
             return path_frag, diction
         return await _update_table_path()
+
 
     # Находим в таблице 'task' и 'frag' строки с 
     # name_frag: z4vMgA7DOyg_610889428620230823132858

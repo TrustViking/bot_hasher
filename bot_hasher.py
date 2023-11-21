@@ -1,25 +1,25 @@
 #!/usr/bin/env python3 
 #
-from typing import Coroutine, Callable, Union, Set, Tuple, List, Optional, Any, Dict
+from typing import List, Optional
 from time import sleep, strftime
 from datetime import datetime as dt
 from asyncio import run 
 from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo, nvmlShutdown
-from logging import getLevelName
+# from logging import getLevelName
 from os.path import basename, join, abspath, dirname, getmtime, isdir
-from os import makedirs, listdir, remove, getmtime, join
+from os import makedirs, listdir, remove
 import shutil
 from sys import platform, argv, path
 from psutil import virtual_memory
 from sqlalchemy.engine.result import Row
 #
 from data_base.table_db import DiffTable
-from bot_env.bot_init import LogInitializer, BotInitializer, ConfigInitializer
+from bot_env.bot_init import LogInitializer, ConfigInitializer
 from bot_env.decorators import safe_await_execute, safe_execute
 from data_base.base_db import MethodDB
-from handlers.client import  HandlersBot
+# from handlers.client import  HandlersBot
 from videohasher.comparator import Comparison
-from bot_env.mod_log import Logger
+# from bot_env.mod_log import Logger
 #
 #
 #
@@ -28,6 +28,7 @@ class HasherVid(ConfigInitializer):
     countInstance=0
     #
     def __init__(self):
+        super().__init__()
         HasherVid.countInstance += 1
         self.countInstance = HasherVid.countInstance
         self.cls_name = self.__class__.__name__
@@ -41,8 +42,6 @@ class HasherVid(ConfigInitializer):
         # Logger
         self.log_init = LogInitializer()
         self.logger = self.log_init.initialize(self.config_path)
-        # Импорт словаря {имя таблицы : таблица}  
-        self.name_table = DiffTable.tables
         # MethodDB
         self.methodDb=MethodDB(self.logger, self.config_path)
         # Comparison
@@ -54,6 +53,8 @@ class HasherVid(ConfigInitializer):
         self.create_directory([self.save_file_path, self.path_save_keyframe])
         self.days_del=2
         self.time_del = 24 * 60 * 60 * self.days_del #  
+        # Импорт словаря {имя таблицы : таблица}  
+        self.name_table = DiffTable.tables
         self._print()
     #
 
@@ -72,11 +73,7 @@ class HasherVid(ConfigInitializer):
             'config_path',
             'log_init',
             'logger',
-            'bot_init',
-            'bot',
-            'dp',
-            'router',
-            'name_table',
+            # 'name_table',
             'methodDb',
             'cmp',
             'folder_video',
@@ -84,7 +81,6 @@ class HasherVid(ConfigInitializer):
             'pause_minut_hasher',
             'save_file_path',
             'path_save_keyframe',
-
         ]
 
         for attr in attributes_to_print:
@@ -113,18 +109,18 @@ class HasherVid(ConfigInitializer):
     # выбираем из таблицы скачанные видео, но еще не хэшировали 
     async def rows4diff (self, 
                         name_table: str, 
-                        one_column_name: str, 
-                        one_params_status: str,
-                        two_column_name: str,
-                        two_params_status: str) -> Optional[List[Row]]:
+                        one_column: str, 
+                        one_params: str,
+                        two_column: str,
+                        two_params: str) -> Optional[List[Row]]:
         @safe_await_execute(logger=self.logger, name_method=f'[{__name__}|{self.cls_name}]')
         async def  _rows4diff():
             async_results = await self.methodDb.read_data_two( 
                             name_table = name_table,  
-                            one_column_name = one_column_name, 
-                            one_params_status = one_params_status,
-                            two_column_name = two_column_name, 
-                            two_params_status = two_params_status,
+                            one_column = one_column, 
+                            one_params = one_params,
+                            two_column = two_column, 
+                            two_params = two_params,
                                                         )
             rows = async_results.fetchall()
             if not rows: 
@@ -138,10 +134,10 @@ class HasherVid(ConfigInitializer):
         async def  _kwargs_rows4diff():
             kwargs = {
                     'name_table' : 'diff',  
-                    'one_column_name' : 'dnld', 
-                    'one_params_status' : 'dnlded',
-                    'two_column_name' : 'in_work', 
-                    'two_params_status' : 'not_diff',
+                    'one_column' : 'dnld', 
+                    'one_params' : 'dnlded',
+                    'two_column' : 'in_work', 
+                    'two_params' : 'not_diff',
                     }
             return await self.rows4diff(**kwargs)
         return await _kwargs_rows4diff()

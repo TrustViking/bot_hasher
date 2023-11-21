@@ -1,10 +1,10 @@
 
-from typing import Coroutine, List, Optional, Dict, Union
+from typing import Union
 from time import time, strftime
 from sys import platform
 from aiogram.types.message import Message
 
-from bot_env.mod_log import Logger
+from bot_env.mod_log import LogBot
 from bot_env.decorators import safe_await_execute
 
 
@@ -13,11 +13,11 @@ class DictionDB():
     Создаем словарь для записи в таблицу БД:
 
     Аргументы:
-    - logger: Logger
+    - logger: LogBot
     """
     countInstance=0
     #
-    def __init__(self, logger: Logger):
+    def __init__(self, logger: LogBot):
         DictionDB.countInstance+=1
         self.countInstance=DictionDB.countInstance
         self.cls_name = self.__class__.__name__
@@ -32,7 +32,19 @@ class DictionDB():
             f"\nStarted at {strftime('%X')}\n"
             f'[{__name__}|{self.cls_name}] countInstance: [{self.countInstance}]\n'
             f'platform: [{platform}]\n'
+            f'\nAttributes:\n'
             )
+
+        attributes_to_print = [
+            'cls_name',
+            'logger',
+        ]
+
+        for attr in attributes_to_print:
+            # "Attribute not found" будет выведено, если атрибут не существует
+            value = getattr(self, attr, "Attribute not found")  
+            msg += f"{attr}: {value}\n"
+
         print(msg)
         self.logger.log_info(msg)
 
@@ -81,18 +93,18 @@ class DictionDB():
                 diction['dnld']='dnlded'
                 diction['in_work']='not_diff'
                 #
-                diction['num_kframe_1']='0'
-                diction['num_kframe_2']='0'
-                diction['result_kframe']='0'
+                # diction['num_kframe_1']='0'
+                # diction['num_kframe_2']='0'
+                # diction['result_kframe']='0'
+                diction['num_kframe_1']='?_kframe'
+                diction['num_kframe_2']='?_kframe'
+                diction['result_kframe']='?_kframe'
                 diction['hash_factor']=0.0
                 diction['threshold_kframes']=0.0
                 diction['withoutlogo']='0'
                 diction['number_corner']='0'
                 diction['logo_size']='0'
 
-                diction['num_kframe_1']='?_kframe'
-                diction['num_kframe_2']='?_kframe'
-                diction['result_kframe']='?_kframe'
                 diction['result_diff']='?_similar'
                 diction['num_similar_pair']='?_similar'
                 diction['save_sim_img']='not_save'

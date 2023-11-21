@@ -1,10 +1,10 @@
 
-from typing import Coroutine, Callable, Union, Set, Tuple, List, Optional, Any, Dict
+from typing import Union, Optional, Any
 from logging import Logger, getLevelName, getLogger, Formatter, FileHandler 
-from os.path import join, dirname, exists, abspath
+from os.path import join
 from os import makedirs
-from sys import platform, argv, path
-from time import time, strftime
+from sys import platform, path
+from time import strftime
 
 class LogBot:
     """
@@ -56,7 +56,7 @@ class LogBot:
         #
         self.path_to_logfile = join(self.directory, self.logfile)
         self.logger = self.setup_logger(self.loglevel, self.path_to_logfile)
-        self._print()
+        # self._print()
 
 
     # выводим № объекта

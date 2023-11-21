@@ -9,7 +9,7 @@ from sys import platform
 import numpy as np
 from sqlalchemy.engine.result import Row
 
-from bot_env.mod_log import Logger 
+from bot_env.mod_log import LogBot 
 from bot_env.decorators import safe_execute, safe_await_execute
 from data_base.base_db import MethodDB
 from data_base.table_db import DiffTable
@@ -21,7 +21,7 @@ class Kframes:
     countInstance=0
     
     def __init__(self,
-                logger: Logger,
+                logger: LogBot,
                 method_db: MethodDB, 
                  ):
         Kframes.countInstance += 1
@@ -33,17 +33,31 @@ class Kframes:
         #
         self._print()
 
-    # выводим № объекта
+
+    # выводим атрибуты объекта
     def _print(self):
-        print(f'\n[{__name__}|{self.cls_name}] countInstance: [{self.countInstance}]')
-        self.logger.log_info(f'\n[Kframes] countInstance: [{self.countInstance}]\n')
-        msg = (f"Started at {strftime('%X')}\n"
-              f'platform: [{platform}]\n'
-              f'\nАргументы:\n'
-              f'logger: {self.logger}\n'
-              )
+        msg = (
+            f"\nStarted at {strftime('%X')}\n"
+            f'[{__name__}|{self.cls_name}] countInstance: [{self.countInstance}]\n'
+            f'platform: [{platform}]\n'
+            f'\nAttributes:\n'
+            )
+
+        attributes_to_print = [
+            'cls_name',
+            'logger',
+            'method_db',
+            'name_table',
+        ]
+
+        for attr in attributes_to_print:
+            # "Attribute not found" будет выведено, если атрибут не существует
+            value = getattr(self, attr, "Attribute not found")  
+            msg += f"{attr}: {value}\n"
+
         print(msg)
         self.logger.log_info(msg)
+
 
 
     # создаем директорию, если такой папки нет

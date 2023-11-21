@@ -9,18 +9,21 @@ from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvm
 from psutil import virtual_memory
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncAttrs, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import MetaData, Table, Column, Integer, String, Float
+from sqlalchemy import MetaData
 #
 from data_base.table_db import DiffTable
-from bot_env.bot_init import LogInitializer, BotInitializer, ConfigInitializer
+from bot_env.bot_init import LogInitializer, ConfigInitializer
 from bot_env.decorators import safe_await_alchemy_exe
 #
 #
 class Make_db(AsyncAttrs, DeclarativeBase, ConfigInitializer):
-    """Module for making data base"""
+    """
+    Module for making data base
+    """
     countInstance=0
     #
     def __init__(self):
+        super().__init__()  # Добавлен вызов конструктора базового класса
         Make_db.countInstance += 1
         self.countInstance = Make_db.countInstance
         self.cls_name = self.__class__.__name__
@@ -28,13 +31,13 @@ class Make_db(AsyncAttrs, DeclarativeBase, ConfigInitializer):
         self.sys_abspath = path[0]
         # self.abspath = dirname(abspath(__file__))
 
-        # Logger
+        # config
         self.config_path = join(dirname(abspath(__file__)), 'config.json')
+        self.config = self.read_config(self.config_path)
+
+        # Logger
         self.log_init = LogInitializer()
         self.logger = self.log_init.initialize(self.config_path)
-        
-        # config
-        self.config = self.read_config(self.config_path)
         
         # Определение структуры таблицы 
         self.metadata = DiffTable.metadata
@@ -73,8 +76,17 @@ class Make_db(AsyncAttrs, DeclarativeBase, ConfigInitializer):
             'cls_name',
             'os_abspath',
             'sys_abspath',
+            'config_path',
+            'config',
+            'log_init',
+            'logger',
+            'metadata',
+            'name_table',
             'path_db',
-            'full_path_db'
+            'full_path_db',
+            'db_url',
+            'engine',
+            'Session',
         ]
 
         for attr in attributes_to_print:
@@ -101,8 +113,10 @@ class Make_db(AsyncAttrs, DeclarativeBase, ConfigInitializer):
         # @safe_await_execute(logger=self.logger, name_method='create_tables')
         @safe_await_alchemy_exe(logger=self.logger, name_method='create_tables')
         async def _create_tables(meta_data: MetaData):
+            
             async with self.engine.begin() as connect:
                 await connect.run_sync(meta_data.create_all)
+        
         return await _create_tables(meta_data)
 
     # выводим состояние системы
@@ -120,6 +134,7 @@ class Make_db(AsyncAttrs, DeclarativeBase, ConfigInitializer):
                 f'Data memory:'
                 )
         print(msg)
+
         memory = virtual_memory()
         for field in memory._fields:
             print(f"{field}: {getattr(memory, field)}")    
@@ -141,12 +156,14 @@ class Make_db(AsyncAttrs, DeclarativeBase, ConfigInitializer):
         # Освобождаем ресурсы NVML
         nvmlShutdown()
 
+
     def check_file(self, full_paths: list[str], comment: str = None):
         """
         Проверяем наличие файла в директории 
 
          Аргументы:
-        - paths: список строк, каждая из которых является полным путем к файлу, который необходимо проверить.
+        - paths: список строк, каждая из которых является полным путем к файлу, 
+                 который необходимо проверить.
         """
         notexist_paths = [full_path for full_path in full_paths if not isfile(full_path)]
         if notexist_paths:

@@ -36,6 +36,8 @@ class DiffTable:
         Column("in_work", String(100)), # diff or not_diff
         Column("num_kframe_1", String(10)), # 0-99
         Column("num_kframe_2", String(10)), # 0-99
+        Column("result_kframe", String(10)), # 0-99
+
         Column("hash_factor", Float(15)), # 0-99
         Column("threshold_kframes", Float(15)), # 0-99
         Column("withoutlogo", String(15)), # yes or no
